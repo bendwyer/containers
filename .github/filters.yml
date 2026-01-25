@@ -1,0 +1,6 @@
+---
+context7-mcp: ./**/context7-mcp/**
+flux-mcp: ./**/flux-mcp/**
+github-mcp: ./**/github-mcp/**
+kobo-book-downloader: ./**/kobo-book-downloader/**
+terraform-mcp: ./**/terraform-mcp/**

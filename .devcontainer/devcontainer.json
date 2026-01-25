@@ -1,0 +1,19 @@
+{
+  "name": "containers",
+  "image": "mcr.microsoft.com/devcontainers/base:debian12",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "github.vscode-github-actions",
+        "GitHub.vscode-pull-request-github",
+        "mads-hartmann.bash-ide-vscode",
+        "ms-azuretools.vscode-containers",
+        "redhat.vscode-yaml"
+      ]
+    }
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  }
+}

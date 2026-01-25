@@ -1,0 +1,13 @@
+---
+version: 2
+updates:
+  - package-ecosystem: devcontainers
+    directories: 
+      - /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directories: 
+      - /images/**
+    schedule:
+      interval: weekly
