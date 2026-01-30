@@ -3,5 +3,6 @@ context7-mcp: ./**/context7-mcp/**
 epub2cbz: ./**/epub2cbz/**
 flux-mcp: ./**/flux-mcp/**
 github-mcp: ./**/github-mcp/**
+humble-cli: ./**/humble-cli/**
 kobo-book-downloader: ./**/kobo-book-downloader/**
 terraform-mcp: ./**/terraform-mcp/**
