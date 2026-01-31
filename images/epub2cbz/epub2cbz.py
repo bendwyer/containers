@@ -220,7 +220,7 @@ def main():
             skipped += 1
             continue
 
-        cbz_name = epub_path.stem + ".cbz"
+        cbz_name = re.sub(r"\s+-\s+[^-]+$", "", epub_path.stem) + ".cbz"
         output_path = output_dir / cbz_name
 
         print(f"Converting: {epub_path.name} ({size // (1024*1024)}MB)")
