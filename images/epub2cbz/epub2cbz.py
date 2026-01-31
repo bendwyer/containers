@@ -220,7 +220,9 @@ def main():
             skipped += 1
             continue
 
-        cbz_name = re.sub(r"\s+-\s+[^-]+$", "", epub_path.stem) + ".cbz"
+        stem = re.sub(r"\s+-\s+[^-]+$", "", epub_path.stem)
+        stem = re.sub(r",\s*Vol(?:ume)?\.?\s*", " ", stem)
+        cbz_name = stem.strip() + ".cbz"
         output_path = output_dir / cbz_name
 
         print(f"Converting: {epub_path.name} ({size // (1024*1024)}MB)")
