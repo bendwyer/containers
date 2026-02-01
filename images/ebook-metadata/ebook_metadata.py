@@ -630,7 +630,8 @@ class GoodreadsMetadata:
                 for bs in book_json["bookSeries"]:
                     if "userPosition" in bs:
                         try:
-                            metadata.series_index = str(float(bs["userPosition"]))
+                            val = float(bs["userPosition"])
+                            metadata.series_index = str(int(val)) if val == int(val) else str(val)
                         except (ValueError, TypeError):
                             pass
                         break
@@ -875,6 +876,32 @@ def write_epub_metadata(epub_path: Path, metadata: BookMetadata, cover_data: Opt
         for tag in sorted(metadata.tags):
             book.add_metadata("DC", "subject", tag)
 
+    # Update series (EPUB 3.2 belongs-to-collection)
+    if metadata.series:
+        # Remove existing collection metadata
+        opf_ns = "http://www.idpf.org/2007/opf"
+        existing_opf = book.metadata.get(opf_ns, {}).get("meta", [])
+        book.metadata.setdefault(opf_ns, {})["meta"] = [
+            (value, attrs) for value, attrs in existing_opf
+            if attrs.get("property") not in (
+                "belongs-to-collection", "collection-type", "group-position",
+            )
+        ]
+
+        book.add_metadata(None, "meta", metadata.series, {
+            "property": "belongs-to-collection",
+            "id": "series-id",
+        })
+        book.add_metadata(None, "meta", "series", {
+            "property": "collection-type",
+            "refines": "#series-id",
+        })
+        if metadata.series_index:
+            book.add_metadata(None, "meta", metadata.series_index, {
+                "property": "group-position",
+                "refines": "#series-id",
+            })
+
     # Embed cover image — only replace if new cover is larger than existing
     if cover_data:
         existing_cover_data = None
@@ -979,17 +1006,24 @@ def process_epub(epub_path: Path, searcher, output_dir: Path, marker_dir: Path) 
         log.error(f"  Failed to write epub metadata: {e}")
         return False
 
-    # Organize into output-dir/Author/Series/Title.epub or Author/Title.epub
+    # Organize into output-dir/Author/Series/NN - Title.epub or Author/Title.epub
     author_name = best.authors[0] if best.authors else "Unknown Author"
     safe_author = sanitize_path_component(author_name)
     safe_title = sanitize_path_component(best.title or title)
     if best.series:
         safe_series = sanitize_path_component(best.series)
         dest_dir = output_dir / safe_author / safe_series
+        if best.series_index:
+            parts = best.series_index.split(".", 1)
+            padded = parts[0].zfill(2) + ("." + parts[1] if len(parts) > 1 else "")
+            filename = f"{padded} - {safe_title}.epub"
+        else:
+            filename = f"{safe_title}.epub"
     else:
         dest_dir = output_dir / safe_author
+        filename = f"{safe_title}.epub"
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest_path = dest_dir / f"{safe_title}.epub"
+    dest_path = dest_dir / filename
 
     try:
         shutil.move(str(epub_path), str(dest_path))
