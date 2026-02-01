@@ -1180,8 +1180,12 @@ def process_epub(epub_path: Path, searcher, output_dir: Path, marker_dir: Path) 
         log.error(f"  Failed to move file: {e}")
         return False
 
-    # Create marker for idempotency
-    marker.touch()
+    # Create marker for idempotency — skip if series is known but index is missing
+    # so the book is retried on the next run (e.g. after a Goodreads timeout)
+    if best.series and not best.series_index:
+        log.warning(f"  Skipping marker (series index still missing, will retry next run)")
+    else:
+        marker.touch()
     return True
 
 
