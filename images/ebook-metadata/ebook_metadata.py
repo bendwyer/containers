@@ -985,6 +985,32 @@ def sanitize_path_component(name: str) -> str:
     return name if name else "Unknown"
 
 
+def _pick_best_result(results: List[BookMetadata], title: str, authors: List[str]) -> BookMetadata:
+    """Pick the best metadata result, preferring complete series info and title match."""
+    if len(results) == 1:
+        return results[0]
+
+    title_lower = title.lower().strip()
+    author_set = {a.lower().strip() for a in authors} if authors else set()
+
+    def _score(m: BookMetadata) -> tuple:
+        # Exact title match
+        t_match = 1 if m.title and m.title.lower().strip() == title_lower else 0
+        # Author overlap
+        a_match = 1 if m.authors and {a.lower().strip() for a in m.authors} & author_set else 0
+        # Has series + index (most important for ordering)
+        has_series = 1 if m.series else 0
+        has_index = 1 if m.series_index else 0
+        # Has cover
+        has_cover = 1 if m.cover_url else 0
+        # Has ISBN
+        has_isbn = 1 if m.isbn else 0
+        return (t_match, a_match, has_series + has_index, has_isbn, has_cover)
+
+    results.sort(key=_score, reverse=True)
+    return results[0]
+
+
 # ---------------------------------------------------------------------------
 # Main CLI
 # ---------------------------------------------------------------------------
@@ -1032,7 +1058,7 @@ def process_epub(epub_path: Path, searcher, output_dir: Path, marker_dir: Path) 
             authors=authors if authors else ["Unknown Author"],
         )
     else:
-        best = results[0]
+        best = _pick_best_result(results, title, authors)
         log.info(f"  Match: title={best.title}, authors={best.authors}, series={best.series}")
 
     # Download cover
