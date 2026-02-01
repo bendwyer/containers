@@ -801,7 +801,49 @@ def read_epub_metadata(epub_path: Path) -> Dict[str, any]:
                 isbn = checked
                 break
 
-    return {"title": title, "authors": authors, "isbn": isbn}
+    # Series (EPUB 3.2 belongs-to-collection)
+    series = ""
+    series_index = ""
+    OPF = "http://www.idpf.org/2007/opf"
+    metadata_el = root.find(f"{{{OPF}}}metadata")
+    if metadata_el is not None:
+        for el in metadata_el:
+            prop = el.get("property", "")
+            if prop == "belongs-to-collection" and el.text:
+                series = el.text.strip()
+            elif prop == "group-position" and el.text:
+                series_index = el.text.strip()
+
+    return {"title": title, "authors": authors, "isbn": isbn, "series": series, "series_index": series_index}
+
+
+def _epub_has_cover(epub_path: Path) -> bool:
+    """Check if an epub already contains a cover image."""
+    try:
+        with zipfile.ZipFile(str(epub_path), "r") as zf:
+            opf_path = _find_opf_path(zf)
+            if not opf_path:
+                return False
+            root = ET.fromstring(zf.read(opf_path))
+            OPF = "http://www.idpf.org/2007/opf"
+            manifest = root.find(f"{{{OPF}}}manifest")
+            if manifest is None:
+                return False
+            for item in manifest.findall(f"{{{OPF}}}item"):
+                props = item.get("properties", "")
+                item_id = item.get("id", "")
+                media = item.get("media-type", "")
+                if "cover-image" in props or item_id in ("cover-image", "cover-img", "coverimg"):
+                    return True
+            # Also check for <meta name="cover" content="..."> referencing a manifest item
+            metadata = root.find(f"{{{OPF}}}metadata")
+            if metadata is not None:
+                for meta in metadata:
+                    if meta.get("name") == "cover" and meta.get("content"):
+                        return True
+    except Exception:
+        pass
+    return False
 
 
 def _read_epub_tolerant(epub_path: Path) -> epub.EpubBook:
@@ -1040,7 +1082,11 @@ def process_epub(epub_path: Path, searcher, output_dir: Path, marker_dir: Path) 
         log.warning(f"  No title found in {name}, skipping")
         return False
 
-    log.info(f"  Existing: title={title}, authors={authors}, isbn={isbn}")
+    embedded_series = existing.get("series", "")
+    embedded_series_index = existing.get("series_index", "")
+
+    log.info(f"  Existing: title={title}, authors={authors}, isbn={isbn}"
+             + (f", series={embedded_series} #{embedded_series_index}" if embedded_series else ""))
 
     # Search metadata provider
     identifiers = {}
@@ -1061,14 +1107,44 @@ def process_epub(epub_path: Path, searcher, output_dir: Path, marker_dir: Path) 
         best = _pick_best_result(results, title, authors)
         log.info(f"  Match: title={best.title}, authors={best.authors}, series={best.series}")
 
-    # Download cover
+    # Fill in missing series/index from epub embedded metadata
+    if not best.series and embedded_series:
+        best.series = embedded_series
+        log.info(f"  Using embedded series: {embedded_series}")
+    if best.series and not best.series_index and embedded_series_index:
+        best.series_index = embedded_series_index
+        log.info(f"  Using embedded series index: {embedded_series_index}")
+
+    # Fallback to Goodreads for missing series_index
+    if best.series and not best.series_index and not isinstance(searcher, GoodreadsMetadata):
+        log.info(f"  Series index missing from epub and {searcher.__class__.__name__}, falling back to Goodreads")
+        try:
+            gr = GoodreadsMetadata()
+            gr_results = gr.identify(best.title, best.authors, {})
+            if gr_results:
+                gr_best = _pick_best_result(gr_results, best.title, best.authors)
+                if gr_best.series and gr_best.series_index:
+                    log.info(f"  Goodreads fallback: series={gr_best.series} #{gr_best.series_index}")
+                    best.series_index = gr_best.series_index
+                    # Also adopt Goodreads series name if the primary had none
+                    if not best.series:
+                        best.series = gr_best.series
+                else:
+                    log.warning(f"  Goodreads fallback: no series_index found either")
+        except Exception as e:
+            log.warning(f"  Goodreads fallback failed: {e}")
+
+    # Download cover only if the epub doesn't already have one
     cover_data = None
     if best.cover_url:
-        try:
-            cover_data = searcher.get_cover(best.cover_url)
-            log.info(f"  Downloaded cover ({len(cover_data)} bytes)")
-        except Exception as e:
-            log.warning(f"  Failed to download cover: {e}")
+        if _epub_has_cover(epub_path):
+            log.info("  Skipping cover download (epub already has a cover)")
+        else:
+            try:
+                cover_data = searcher.get_cover(best.cover_url)
+                log.info(f"  Downloaded cover ({len(cover_data)} bytes)")
+            except Exception as e:
+                log.warning(f"  Failed to download cover: {e}")
 
     # Write enriched metadata back to epub
     try:
