@@ -22,6 +22,7 @@ Usage:
 import argparse
 import json
 import logging
+import os
 import re
 import shutil
 import string
@@ -825,109 +826,154 @@ def _read_epub_tolerant(epub_path: Path) -> epub.EpubBook:
 
 
 def write_epub_metadata(epub_path: Path, metadata: BookMetadata, cover_data: Optional[bytes] = None) -> None:
-    """Update metadata in an epub file."""
-    book = _read_epub_tolerant(epub_path)
+    """Update metadata in an epub file by directly editing the OPF XML inside the zip.
 
-    # Update title
-    if metadata.title:
-        book.set_title(metadata.title)
+    This avoids ebooklib's lossy read/write round-trip which strips manifest entries.
+    """
+    import xml.etree.ElementTree as ET
+    import tempfile
 
-    # Update authors — clear existing and add new
-    # ebooklib doesn't have a direct "set creators" so we manipulate metadata directly
-    book.metadata.setdefault("http://purl.org/dc/elements/1.1/", {})
-    dc_ns = "http://purl.org/dc/elements/1.1/"
+    DC = "http://purl.org/dc/elements/1.1/"
+    OPF = "http://www.idpf.org/2007/opf"
+    ET.register_namespace("dc", DC)
+    ET.register_namespace("opf", OPF)
+    ET.register_namespace("", OPF)
 
-    # Remove existing creators
-    if "creator" in book.metadata.get(dc_ns, {}):
-        del book.metadata[dc_ns]["creator"]
-
-    for author in metadata.authors:
-        book.add_author(author)
-
-    # Update publisher
-    if metadata.publisher:
-        # Remove existing publisher
-        if "publisher" in book.metadata.get(dc_ns, {}):
-            del book.metadata[dc_ns]["publisher"]
-        book.add_metadata("DC", "publisher", metadata.publisher)
-
-    # Update description/comments
-    if metadata.comments:
-        if "description" in book.metadata.get(dc_ns, {}):
-            del book.metadata[dc_ns]["description"]
-        book.add_metadata("DC", "description", metadata.comments)
-
-    # Update date
-    if metadata.pubdate:
-        if "date" in book.metadata.get(dc_ns, {}):
-            del book.metadata[dc_ns]["date"]
-        book.add_metadata("DC", "date", metadata.pubdate.strftime("%Y-%m-%d"))
-
-    # Update language
-    if metadata.language:
-        if "language" in book.metadata.get(dc_ns, {}):
-            del book.metadata[dc_ns]["language"]
-        book.add_metadata("DC", "language", metadata.language)
-
-    # Update subject/tags
-    if metadata.tags:
-        if "subject" in book.metadata.get(dc_ns, {}):
-            del book.metadata[dc_ns]["subject"]
-        for tag in sorted(metadata.tags):
-            book.add_metadata("DC", "subject", tag)
-
-    # Update series (EPUB 3.2 belongs-to-collection)
-    if metadata.series:
-        # Remove existing collection metadata
-        opf_ns = "http://www.idpf.org/2007/opf"
-        existing_opf = book.metadata.get(opf_ns, {}).get("meta", [])
-        book.metadata.setdefault(opf_ns, {})["meta"] = [
-            (value, attrs) for value, attrs in existing_opf
-            if attrs.get("property") not in (
-                "belongs-to-collection", "collection-type", "group-position",
-            )
-        ]
-
-        book.add_metadata(None, "meta", metadata.series, {
-            "property": "belongs-to-collection",
-            "id": "series-id",
-        })
-        book.add_metadata(None, "meta", "series", {
-            "property": "collection-type",
-            "refines": "#series-id",
-        })
-        if metadata.series_index:
-            book.add_metadata(None, "meta", metadata.series_index, {
-                "property": "group-position",
-                "refines": "#series-id",
-            })
-
-    # Embed cover image — only replace if new cover is larger than existing
-    if cover_data:
-        existing_cover_data = None
-        for item in book.items:
-            if getattr(item, "id", "") == "cover-image":
-                existing_cover_data = item.content
+    with zipfile.ZipFile(str(epub_path), "r") as zin:
+        # Find the OPF file
+        opf_path = None
+        for name in zin.namelist():
+            if name.endswith(".opf"):
+                opf_path = name
                 break
+        if opf_path is None:
+            # Try container.xml
+            try:
+                container = ET.fromstring(zin.read("META-INF/container.xml"))
+                ns = {"c": "urn:oasis:names:tc:opendocument:xmlns:container"}
+                rootfile = container.find(".//c:rootfile", ns)
+                if rootfile is not None:
+                    opf_path = rootfile.get("full-path")
+            except Exception:
+                pass
+        if opf_path is None:
+            raise ValueError("Cannot find OPF file in epub")
 
-        if existing_cover_data is None or len(cover_data) > len(existing_cover_data):
-            cover_item = epub.EpubImage()
-            cover_item.file_name = "cover.jpg"
-            cover_item.media_type = "image/jpeg"
-            cover_item.content = cover_data
-            cover_item.id = "cover-image"
+        opf_data = zin.read(opf_path)
+        tree = ET.ElementTree(ET.fromstring(opf_data))
+        root = tree.getroot()
+        meta_el = root.find(f"{{{OPF}}}metadata")
+        if meta_el is None:
+            raise ValueError("Cannot find <metadata> in OPF")
 
-            # Remove existing cover image if present
-            existing_covers = [item for item in book.items if getattr(item, "id", "") == "cover-image"]
-            for item in existing_covers:
-                book.items.remove(item)
+        # Helper: remove all children with given tag from metadata
+        def _remove_dc(tag):
+            for el in meta_el.findall(f"{{{DC}}}{tag}"):
+                meta_el.remove(el)
 
-            # set_cover both adds the item and sets cover metadata
-            book.set_cover("cover.jpg", cover_data)
-        else:
-            log.info(f"  Keeping existing cover ({len(existing_cover_data)} bytes >= new {len(cover_data)} bytes)")
+        def _set_dc(tag, value):
+            _remove_dc(tag)
+            el = ET.SubElement(meta_el, f"{{{DC}}}{tag}")
+            el.text = value
 
-    epub.write_epub(str(epub_path), book)
+        # Update DC metadata
+        if metadata.title:
+            _set_dc("title", metadata.title)
+
+        if metadata.authors:
+            _remove_dc("creator")
+            for author in metadata.authors:
+                el = ET.SubElement(meta_el, f"{{{DC}}}creator")
+                el.text = author
+
+        if metadata.publisher:
+            _set_dc("publisher", metadata.publisher)
+
+        if metadata.comments:
+            _set_dc("description", metadata.comments)
+
+        if metadata.pubdate:
+            _set_dc("date", metadata.pubdate.strftime("%Y-%m-%d"))
+
+        if metadata.language:
+            _set_dc("language", metadata.language)
+
+        if metadata.tags:
+            _remove_dc("subject")
+            for tag in sorted(metadata.tags):
+                el = ET.SubElement(meta_el, f"{{{DC}}}subject")
+                el.text = tag
+
+        # Update series (EPUB 3.2 belongs-to-collection)
+        if metadata.series:
+            # Remove existing collection meta elements
+            for el in list(meta_el):
+                if el.tag == "meta" or el.tag == f"{{{OPF}}}meta":
+                    prop = el.get("property", "")
+                    if prop in ("belongs-to-collection", "collection-type", "group-position"):
+                        meta_el.remove(el)
+
+            col_el = ET.SubElement(meta_el, "meta")
+            col_el.set("property", "belongs-to-collection")
+            col_el.set("id", "series-id")
+            col_el.text = metadata.series
+
+            type_el = ET.SubElement(meta_el, "meta")
+            type_el.set("property", "collection-type")
+            type_el.set("refines", "#series-id")
+            type_el.text = "series"
+
+            if metadata.series_index:
+                pos_el = ET.SubElement(meta_el, "meta")
+                pos_el.set("property", "group-position")
+                pos_el.set("refines", "#series-id")
+                pos_el.text = metadata.series_index
+
+        # Determine cover image path in the zip for replacement
+        cover_image_path = None
+        if cover_data:
+            manifest = root.find(f"{{{OPF}}}manifest")
+            if manifest is not None:
+                # Look for item with properties="cover-image" or id containing "cover"
+                opf_dir = str(Path(opf_path).parent)
+                for item in manifest.findall(f"{{{OPF}}}item"):
+                    props = item.get("properties", "")
+                    item_id = item.get("id", "")
+                    if "cover-image" in props or item_id in ("cover-image", "cover-img"):
+                        href = item.get("href", "")
+                        if opf_dir and opf_dir != ".":
+                            cover_image_path = f"{opf_dir}/{href}"
+                        else:
+                            cover_image_path = href
+                        break
+
+        # Serialize updated OPF
+        new_opf = ET.tostring(root, encoding="unicode", xml_declaration=True)
+
+        # Rewrite the zip with updated OPF (and optionally cover)
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".epub")
+        os.close(tmp_fd)
+        try:
+            with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zout:
+                for item in zin.infolist():
+                    if item.filename == opf_path:
+                        zout.writestr(item, new_opf)
+                    elif cover_data and cover_image_path and item.filename == cover_image_path:
+                        # Check if new cover is larger
+                        existing = zin.read(item.filename)
+                        if len(cover_data) > len(existing):
+                            zout.writestr(item, cover_data)
+                        else:
+                            log.info(f"  Keeping existing cover ({len(existing)} bytes >= new {len(cover_data)} bytes)")
+                            zout.writestr(item, existing)
+                    else:
+                        zout.writestr(item, zin.read(item.filename))
+
+            shutil.move(tmp_path, str(epub_path))
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
 
 
 def sanitize_path_component(name: str) -> str:
@@ -1026,7 +1072,7 @@ def process_epub(epub_path: Path, searcher, output_dir: Path, marker_dir: Path) 
     dest_path = dest_dir / filename
 
     try:
-        shutil.move(str(epub_path), str(dest_path))
+        shutil.copy2(str(epub_path), str(dest_path))
         log.info(f"  -> {dest_path.relative_to(output_dir)}")
     except Exception as e:
         log.error(f"  Failed to move file: {e}")
