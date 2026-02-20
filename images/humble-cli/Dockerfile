@@ -7,7 +7,7 @@ RUN apk add --no-cache curl jq tar && \
   mv /usr/local/bin/humble-cli-linux-${arch} /usr/local/bin/humble-cli
 RUN ls -la /usr/local/bin
 
-FROM alpine:3.21
+FROM alpine:3.23
 RUN apk add --no-cache libc6-compat
 COPY --from=build /usr/local/bin/humble-cli /usr/local/bin/humble-cli
 ENTRYPOINT ["humble-cli"]
