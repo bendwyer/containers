@@ -7,6 +7,8 @@ on:
       - main
     paths:
       - "images/**/Dockerfile"
+      - "images/**/get-version.sh"
+      - "images/**/requirements.txt"
       - "images/**/*.py"
   push:
     branches:
