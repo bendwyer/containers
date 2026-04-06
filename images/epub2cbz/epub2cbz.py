@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os; os.umask(0o022)  # noqa: E702 — ensure files are group/world-readable
 """Convert manga EPUB files to CBZ by parsing the OPF spine for correct page order.
 
 Inspired by https://github.com/bust4cap/epub2cbz
