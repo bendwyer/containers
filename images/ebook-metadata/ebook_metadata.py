@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os; os.umask(0o022)  # noqa: E702 — ensure files are group/world-readable
 """Fetch metadata from the Kobo store or Goodreads and enrich epub ebooks.
 
 Supports two metadata providers:
@@ -1174,10 +1175,10 @@ def process_epub(epub_path: Path, searcher, output_dir: Path, marker_dir: Path) 
     dest_path = dest_dir / filename
 
     try:
-        shutil.copy2(str(epub_path), str(dest_path))
+        shutil.copy(str(epub_path), str(dest_path))
         log.info(f"  -> {dest_path.relative_to(output_dir)}")
     except Exception as e:
-        log.error(f"  Failed to move file: {e}")
+        log.error(f"  Failed to copy file: {e}")
         return False
 
     # Create marker for idempotency — skip if series is known but index is missing
