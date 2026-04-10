@@ -1,4 +1,5 @@
 ---
+ansible-mcp: ./**/ansible-mcp/**
 comictagger: ./**/comictagger/**
 context7-mcp: ./**/context7-mcp/**
 epub2cbz: ./**/epub2cbz/**
