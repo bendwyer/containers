@@ -16,11 +16,12 @@ Claude
     "ansible": {
       "type": "stdio",
       "command": "docker",
-      "args": [
+      "args":[
         "run",
         "-i",
         "--rm",
-        "ghcr.io/bendwyer/containers/ansible-mcp:1",
+        "ghcr.io/bendwyer/containers/ansible-mcp:0",
+        "--stdio"
       ]
     }
   }
