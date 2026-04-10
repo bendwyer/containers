@@ -20,7 +20,7 @@ Claude
         "run",
         "-i",
         "--rm",
-        "ghcr.io/bendwyer/containers/ansible-mcp-server:1",
+        "ghcr.io/bendwyer/containers/ansible-mcp:1",
       ]
     }
   }
