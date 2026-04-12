@@ -1,10 +1,25 @@
+ARG OWNER=github
+ARG BINARY=github-mcp-server
+
 FROM alpine:3.23 AS build
 
-RUN apk add --no-cache curl jq tar && \
-  ARCH=$(uname -m | sed 's/aarch64/arm64/') && \
-  curl -sSL https://github.com/github/github-mcp-server/releases/latest/download/github-mcp-server_Linux_${ARCH}.tar.gz | tar xzf - -C /usr/local/bin/ github-mcp-server
+ARG OWNER
+ARG BINARY
+ARG TARGETARCH
 
-FROM gcr.io/distroless/static-debian12
-COPY --from=build /usr/local/bin/github-mcp-server /usr/local/bin/github-mcp-server
+RUN apk add --no-cache curl tar && \
+  case "${TARGETARCH}" in \
+    amd64) ARCH=x86_64 ;; \
+    arm64) ARCH=arm64 ;; \
+    *) ARCH="${TARGETARCH}" ;; \
+  esac && \
+  curl -sSL "https://github.com/${OWNER}/${BINARY}/releases/latest/download/${BINARY}_Linux_${ARCH}.tar.gz" \
+    | tar xzf - -C /usr/local/bin/ "${BINARY}"
+
+FROM gcr.io/distroless/static-debian13
+
+ARG BINARY
+
+COPY --from=build /usr/local/bin/${BINARY} /usr/local/bin/${BINARY}
 ENTRYPOINT ["github-mcp-server"]
-CMD ["stdio"]
+CMD ["--help"]
