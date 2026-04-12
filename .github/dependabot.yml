@@ -10,6 +10,9 @@ updates:
     directories:
       - /images/**
     ignore:
+      - dependency-name: "node"
+        update-types:
+          - "version-update:semver-major"
       - dependency-name: "python"
         update-types:
           - "version-update:semver-minor"
