@@ -5,7 +5,6 @@ FROM alpine:3.23 AS build
 
 ARG OWNER
 ARG BINARY
-
 ARG TARGETARCH
 
 RUN apk add --no-cache curl tar && \
