@@ -6,7 +6,7 @@ Context7 MCP Server
 
 I was not able to find an official container for context7.
 
-Claude
+Claude Code
 ------
 
 ```json
@@ -19,10 +19,14 @@ Claude
         "run",
         "-i",
         "--rm",
-        "ghcr.io/bendwyer/containers/context7-mcp:1",
-        "--api-key",
-        "${CONTEXT7_API_KEY:-''}"
-      ]
+        "-e", "CONTEXT7_API_KEY",
+        "ghcr.io/bendwyer/containers/context7-mcp:2",
+        "--transport",
+        "stdio"
+      ],
+      "env": {
+        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
+      }
     }
   }
 }
