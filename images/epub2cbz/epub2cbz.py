@@ -192,11 +192,21 @@ def main():
         required=True,
         help="Directory to store conversion markers",
     )
+    parser.add_argument(
+        "--include-pattern",
+        help="Case-insensitive regex; if set, only epub filename stems matching this are processed.",
+    )
+    parser.add_argument(
+        "--exclude-pattern",
+        help="Case-insensitive regex; if set, epub filename stems matching this are skipped.",
+    )
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir)
     output_dir = Path(args.output_dir)
     marker_dir = Path(args.marker_dir)
+    include_re = re.compile(args.include_pattern, re.IGNORECASE) if args.include_pattern else None
+    exclude_re = re.compile(args.exclude_pattern, re.IGNORECASE) if args.exclude_pattern else None
     min_bytes = args.min_size * 1024 * 1024
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -213,6 +223,11 @@ def main():
     for epub_path in epubs:
         size = epub_path.stat().st_size
         if size < min_bytes:
+            continue
+
+        if include_re is not None and not include_re.search(epub_path.stem):
+            continue
+        if exclude_re is not None and exclude_re.search(epub_path.stem):
             continue
 
         # Check if already converted
