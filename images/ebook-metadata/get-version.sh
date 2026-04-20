@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 
-echo "2.0.1"
+echo "2.0.2"
