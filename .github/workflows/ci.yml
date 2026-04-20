@@ -10,6 +10,7 @@ on:
       - "images/**/get-version.sh"
       - "images/**/requirements.txt"
       - "images/**/*.py"
+      - "images/**/*.patch"
   push:
     branches:
       - main

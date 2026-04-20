@@ -1,0 +1,22 @@
+mangabaka_talker: guard None in _format_secondary_titles
+
+When a MangaBaka series record has no `secondary_titles` the field comes back
+as None, not as an empty dict. _format_secondary_titles iterates over
+titles.values() directly, which raises AttributeError: 'NoneType' object has
+no attribute 'values'. Observed against "Issak" (Vol 1). Guard the outer
+iteration with `(titles or {})` — the inner `if alias is not None` guard was
+already present but only protects against None items inside the dict, not
+against the dict parameter itself being None.
+
+Upstream: https://github.com/mizaki/mangabaka_talker (0.0.9, no open issue)
+--- a/mangabaka_talker/mangabaka.py
++++ b/mangabaka_talker/mangabaka.py
+@@ -250,7 +250,7 @@
+
+     def _format_secondary_titles(self, titles: dict[str, list[dict[str, str]]]) -> set[str]:
+         aliases = set()
+-        for alias in titles.values():
++        for alias in (titles or {}).values():
+             if alias is not None:
+                 for a in alias:
+                     aliases.add(a["title"])
