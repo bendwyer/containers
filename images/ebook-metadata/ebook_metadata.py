@@ -1222,7 +1222,8 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     marker_dir.mkdir(parents=True, exist_ok=True)
 
-    epubs = sorted(input_dir.glob("*.epub"))
+    # rglob to handle both flat and nested source directory layouts.
+    epubs = sorted(input_dir.rglob("*.epub"))
     if not epubs:
         print("No epub files found")
         return
