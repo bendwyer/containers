@@ -2,11 +2,12 @@
 ansible-mcp: ./**/ansible-mcp/**
 comictagger: ./**/comictagger/**
 context7-mcp: ./**/context7-mcp/**
+ebook-metadata: ./**/ebook-metadata/**
 epub2cbz: ./**/epub2cbz/**
 flux-mcp: ./**/flux-mcp/**
 github-mcp: ./**/github-mcp/**
 grafana-mcp: ./**/grafana-mcp/**
 humble-cli: ./**/humble-cli/**
+humble-sorter: ./**/humble-sorter/**
 kobo-book-downloader: ./**/kobo-book-downloader/**
-ebook-metadata: ./**/ebook-metadata/**
 terraform-mcp: ./**/terraform-mcp/**
