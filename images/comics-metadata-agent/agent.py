@@ -12,9 +12,13 @@ Usage:
         --decision-log-dir /books/library/.agent-decisions \\
         --kavita-url http://kavita.books.svc.cluster.local \\
         --kavita-api-key-file /secret/kavita/api-key \\
-        --comicvine-api-key-file /secret/comicvine/api-key \\
-        --anthropic-api-key-file /secret/anthropic/api-key \\
+        --comicvine-api-key-file /secret/comicvine/credential \\
+        --anthropic-credential-file /secret/anthropic/credential \\
         --model claude-sonnet-4-6
+
+The Anthropic credential file may hold either a pay-as-you-go API key
+(sk-ant-api-...) or a subscription-tied OAuth token (sk-ant-oat-...).
+Auto-detected from the token prefix.
 
 Source context file (JSON). `source_id` is a unique identifier for the
 acquisition group — humble bundle_key, kobo batch label, etc.:
@@ -48,7 +52,7 @@ from kavita_client import KavitaClient
 from series_grouper import group_by_series
 
 
-_VERSION = "0.1.0"
+_VERSION = "0.1.1"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -57,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         kavita_key = _read_secret(args.kavita_api_key_file)
         comicvine_key = _read_secret(args.comicvine_api_key_file)
-        anthropic_key = _read_secret(args.anthropic_api_key_file)
+        anthropic_cred = _read_secret(args.anthropic_credential_file)
     except FileNotFoundError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
@@ -96,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
         user_agent=f"comics-metadata-agent/{_VERSION}",
         session=session,
     )
-    claude = anthropic.Anthropic(api_key=anthropic_key)
+    claude = _make_claude_client(anthropic_cred)
     decision_log = DecisionLog(args.decision_log_dir, source_id=source_id)
 
     runner = AgentRunner(
@@ -134,6 +138,25 @@ def _read_secret(path: Path) -> str:
     return path.read_text().strip()
 
 
+def _detect_auth_mode(credential: str) -> str:
+    """Classify an Anthropic credential by its prefix.
+
+    Returns 'oauth' for subscription-tied OAuth tokens (sk-ant-oat...),
+    'api_key' for pay-as-you-go console API keys (sk-ant-api...) and
+    anything else — the SDK validates on first request either way.
+    """
+    return "oauth" if credential.startswith("sk-ant-oat") else "api_key"
+
+
+def _make_claude_client(credential: str):
+    """Construct an anthropic.Anthropic client with the right auth param
+    for the credential type. OAuth tokens go to auth_token, API keys to
+    api_key; the SDK handles the rest."""
+    if _detect_auth_mode(credential) == "oauth":
+        return anthropic.Anthropic(auth_token=credential)
+    return anthropic.Anthropic(api_key=credential)
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Propose ComicVine matches for dead-lettered CBZ files.",
@@ -150,7 +173,10 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
                    help="Base URL for the Kavita instance.")
     p.add_argument("--kavita-api-key-file", required=True, type=Path)
     p.add_argument("--comicvine-api-key-file", required=True, type=Path)
-    p.add_argument("--anthropic-api-key-file", required=True, type=Path)
+    p.add_argument("--anthropic-credential-file", required=True, type=Path,
+                   help="Path to a file holding either an Anthropic API key "
+                        "(sk-ant-api-...) or an OAuth token (sk-ant-oat-...). "
+                        "Auth mode is auto-detected by prefix.")
     p.add_argument("--model", default="claude-sonnet-4-6",
                    help="Claude model id.")
     p.add_argument("--max-tool-rounds", type=int, default=8,
