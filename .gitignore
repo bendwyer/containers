@@ -1,2 +1,16 @@
 # Claude
 .claude
+
+# Python
+__pycache__
+.venv/
+venv/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
