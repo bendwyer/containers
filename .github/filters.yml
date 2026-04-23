@@ -1,5 +1,6 @@
 ---
 ansible-mcp: ./**/ansible-mcp/**
+comics-metadata-agent: ./**/comics-metadata-agent/**
 comictagger: ./**/comictagger/**
 context7-mcp: ./**/context7-mcp/**
 ebook-metadata: ./**/ebook-metadata/**
