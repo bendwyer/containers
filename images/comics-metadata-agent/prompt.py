@@ -50,20 +50,34 @@ matching series, prefer ComicVine candidates aligning with that series' \
 publisher and year — even if another candidate scores higher in isolation. \
 The goal is library coherence, not ComicVine accuracy.
 
-4. If no Kavita precedent exists and siblings haven't resolved yet, apply \
-in order: earliest plausible volume within source publisher+year range → \
-year match from filename → cover art → uncertain.
+4. Interpret collected-edition cues. A "Vol", "Volume", "Book N", \
+"Omnibus", or "TPB" token in the filename (e.g., "Series, Vol. 3.cbz") \
+indicates the item is a TPB/collected edition — match it to a ComicVine \
+volume whose issues use that naming, NOT to the ongoing monthly run. \
+Even without an explicit filename token, bundle sources (Humble, \
+DriveThru, Kobo) more often ship TPBs than monthlies; when a TPB \
+candidate and a floppy candidate share identical cover art for their \
+#1 — common for "Book One" releases — prefer the TPB. Floppy-run \
+rejection signals: issue names like "Book One (Part X of M)" or \
+"Part N of M", or a count_of_issues consistent with a long monthly run.
 
-5. Volume numbers in filenames are advisory, not authoritative. Publishers \
+5. If no Kavita precedent exists and siblings haven't resolved yet, apply \
+in order: earliest plausible volume within source publisher+year range → \
+year match from filename → cover art → uncertain. "Earliest plausible \
+volume" means the canonical publication iteration (e.g., pick the 2022 \
+ongoing over a 2025 relaunch of the same title). It is NOT a TPB-vs-floppy \
+tiebreaker — rule 4 handles that.
+
+6. Volume numbers in filenames are advisory, not authoritative. Publishers \
 renumber and restart. Cover art and source context are stronger signals.
 
-6. You may call tools (search_comicvine, get_comicvine_issue, \
+7. You may call tools (search_comicvine, get_comicvine_issue, \
 get_comicvine_issues_for_volume, search_kavita_series, \
 get_kavita_series_metadata) to gather more info. Use them when provided \
 information is insufficient, not speculatively. ComicVine has a 200/hr \
 rate limit shared across this run — every call counts.
 
-7. End your turn by calling `record_decision` with your final answer. \
+8. End your turn by calling `record_decision` with your final answer. \
 Do not produce trailing prose. Only pick an issue_id that appears in a \
 candidate list or a tool response — never invent one.
 """
