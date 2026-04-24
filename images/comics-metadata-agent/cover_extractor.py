@@ -1,6 +1,6 @@
-"""Extract CBZ pages as Anthropic vision image blocks. Oversize pages
-(>5 MiB, common on hi-res scans) are downscaled to JPEG via Pillow;
-under-limit pages pass through untouched."""
+"""Extract CBZ pages as Anthropic vision image blocks. Pages whose
+base64-encoded payload would exceed the 5 MiB wire cap (~3.75 MiB raw)
+are downscaled to JPEG via Pillow; under-limit pages pass through."""
 
 from __future__ import annotations
 
@@ -13,9 +13,11 @@ from pathlib import Path
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
+# Anthropic's 5 MiB cap applies to the base64-encoded payload on the wire,
+# not the raw bytes. Base64 expands ~4/3, so max raw = limit * 3/4.
 ANTHROPIC_IMAGE_MAX_BYTES = 5 * 1024 * 1024
-# 64 KiB safety margin under the hard cap.
-COMPRESSION_TARGET_BYTES = ANTHROPIC_IMAGE_MAX_BYTES - 64 * 1024
+RAW_SIZE_LIMIT = (ANTHROPIC_IMAGE_MAX_BYTES * 3) // 4
+COMPRESSION_TARGET_BYTES = RAW_SIZE_LIMIT - 64 * 1024
 MIN_COMPRESSION_SCALE = 0.1
 
 
