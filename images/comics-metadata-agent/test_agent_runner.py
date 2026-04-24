@@ -177,6 +177,47 @@ class ToolUseLoopTests(unittest.TestCase):
         kwargs.update(overrides)
         return AgentRunner(**kwargs)
 
+    def test_oauth_mode_rewrites_system_and_prepends_user_text(self):
+        """OAuth auth requires the constrained Claude-Code system message;
+        our real prompt goes into the first user message text block."""
+        from prompt import OAUTH_SYSTEM_MESSAGE, SYSTEM_PROMPT
+        claude = MagicMock()
+        claude.messages.create.return_value = _response([
+            _Block("tool_use", id="tu", name="record_decision", input={
+                "decision": "uncertain",
+                "reasoning": "n/a",
+            }),
+        ])
+        runner = self._make_runner(claude, oauth_mode=True)
+        runner.run_item(self.cbz, {}, [])
+
+        _, kwargs = claude.messages.create.call_args
+        self.assertEqual(kwargs["system"], OAUTH_SYSTEM_MESSAGE)
+        # First user message's first text block must contain our real prompt.
+        user_content = kwargs["messages"][0]["content"]
+        text_block = user_content[0]
+        self.assertEqual(text_block["type"], "text")
+        self.assertTrue(text_block["text"].startswith(SYSTEM_PROMPT))
+        self.assertIn("Radiant Black, 1.cbz", text_block["text"])
+
+    def test_api_key_mode_leaves_system_as_prompt(self):
+        from prompt import SYSTEM_PROMPT
+        claude = MagicMock()
+        claude.messages.create.return_value = _response([
+            _Block("tool_use", id="tu", name="record_decision", input={
+                "decision": "uncertain",
+                "reasoning": "n/a",
+            }),
+        ])
+        runner = self._make_runner(claude)  # oauth_mode defaults to False
+        runner.run_item(self.cbz, {}, [])
+
+        _, kwargs = claude.messages.create.call_args
+        self.assertEqual(kwargs["system"], SYSTEM_PROMPT)
+        user_content = kwargs["messages"][0]["content"]
+        # Real prompt must NOT be in the user text in api_key mode.
+        self.assertNotIn(SYSTEM_PROMPT, user_content[0]["text"])
+
     def test_immediate_record_decision_match(self):
         # Claude answers on the first turn.
         claude = MagicMock()

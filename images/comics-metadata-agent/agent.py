@@ -52,7 +52,11 @@ from kavita_client import KavitaClient
 from series_grouper import group_by_series
 
 
-_VERSION = "0.1.1"
+_VERSION = "0.1.2"
+# Required to unlock OAuth authentication on /v1/messages. Without it,
+# Anthropic returns 401 "OAuth authentication is currently not supported"
+# even though the token itself is valid.
+ANTHROPIC_OAUTH_BETA_HEADER = "oauth-2025-04-20"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -110,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
         decision_log=decision_log,
         model=args.model,
         max_tool_rounds=args.max_tool_rounds,
+        oauth_mode=_detect_auth_mode(anthropic_cred) == "oauth",
     )
 
     groups = group_by_series(items)
@@ -150,10 +155,14 @@ def _detect_auth_mode(credential: str) -> str:
 
 def _make_claude_client(credential: str):
     """Construct an anthropic.Anthropic client with the right auth param
-    for the credential type. OAuth tokens go to auth_token, API keys to
-    api_key; the SDK handles the rest."""
+    for the credential type. OAuth tokens also need the oauth beta header
+    injected; without it the messages endpoint 401s with 'OAuth
+    authentication is currently not supported'."""
     if _detect_auth_mode(credential) == "oauth":
-        return anthropic.Anthropic(auth_token=credential)
+        return anthropic.Anthropic(
+            auth_token=credential,
+            default_headers={"anthropic-beta": ANTHROPIC_OAUTH_BETA_HEADER},
+        )
     return anthropic.Anthropic(api_key=credential)
 
 
