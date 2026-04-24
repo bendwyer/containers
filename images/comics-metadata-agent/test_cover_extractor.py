@@ -224,8 +224,11 @@ class AnthropicImagesTests(unittest.TestCase):
         cbz = _make_cbz([("01.jpg", big)])
         images = extract_pages_as_anthropic_images(cbz, page_indices=[0])
         self.assertEqual(len(images), 1)
-        # Output must be under the hard limit.
-        decoded = base64.b64decode(images[0]["source"]["data"])
+        # The 5 MiB cap is on the base64 payload on the wire, not the raw
+        # bytes — that's the regression this guards against.
+        b64 = images[0]["source"]["data"]
+        self.assertLessEqual(len(b64), ANTHROPIC_IMAGE_MAX_BYTES)
+        decoded = base64.b64decode(b64)
         self.assertLessEqual(len(decoded), ANTHROPIC_IMAGE_MAX_BYTES)
         # Compressed output is always JPEG regardless of input format.
         self.assertEqual(images[0]["source"]["media_type"], "image/jpeg")
