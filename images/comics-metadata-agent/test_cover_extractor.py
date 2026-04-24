@@ -10,6 +10,8 @@ import zipfile
 from pathlib import Path
 
 from cover_extractor import (
+    ANTHROPIC_IMAGE_MAX_BYTES,
+    COMPRESSION_TARGET_BYTES,
     count_pages,
     detect_mime_type,
     extract_pages,
@@ -182,6 +184,51 @@ class AnthropicImagesTests(unittest.TestCase):
         self.assertEqual(decoded, JPEG_MAGIC + b"cover")
         # Second page: PNG (MIME detected per-page)
         self.assertEqual(images[1]["source"]["media_type"], "image/png")
+
+    def test_under_limit_passes_through_untouched(self):
+        """A small valid JPEG should come through unchanged (no decode/re-encode)."""
+        # Build a real-ish tiny JPEG via PIL. Under limit, so should be
+        # returned as-is.
+        from PIL import Image
+        import io
+        buf = io.BytesIO()
+        Image.new("RGB", (100, 100), "red").save(buf, format="JPEG", quality=85)
+        jpeg_bytes = buf.getvalue()
+        self.assertLess(len(jpeg_bytes), COMPRESSION_TARGET_BYTES)
+
+        cbz = _make_cbz([("01.jpg", jpeg_bytes)])
+        images = extract_pages_as_anthropic_images(cbz, page_indices=[0])
+        self.assertEqual(len(images), 1)
+        decoded = base64.b64decode(images[0]["source"]["data"])
+        # Pass-through: byte-identical
+        self.assertEqual(decoded, jpeg_bytes)
+        self.assertEqual(images[0]["source"]["media_type"], "image/jpeg")
+
+    def test_oversize_is_compressed_under_limit(self):
+        """A JPEG larger than the limit must be re-encoded to fit."""
+        from PIL import Image
+        import io
+        # 6000×6000 with random-ish pattern produces a big-enough JPEG
+        # even at high quality to exceed the 5 MiB cap.
+        img = Image.new("RGB", (6000, 6000))
+        # Fill with a gradient so it doesn't compress to almost nothing.
+        px = img.load()
+        for y in range(6000):
+            for x in range(6000):
+                px[x, y] = ((x + y) % 256, (x * 2) % 256, (y * 3) % 256)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=95)
+        big = buf.getvalue()
+        self.assertGreater(len(big), ANTHROPIC_IMAGE_MAX_BYTES)
+
+        cbz = _make_cbz([("01.jpg", big)])
+        images = extract_pages_as_anthropic_images(cbz, page_indices=[0])
+        self.assertEqual(len(images), 1)
+        # Output must be under the hard limit.
+        decoded = base64.b64decode(images[0]["source"]["data"])
+        self.assertLessEqual(len(decoded), ANTHROPIC_IMAGE_MAX_BYTES)
+        # Compressed output is always JPEG regardless of input format.
+        self.assertEqual(images[0]["source"]["media_type"], "image/jpeg")
 
 
 if __name__ == "__main__":
