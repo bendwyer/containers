@@ -1,20 +1,22 @@
-"""Extract cover-matching images from CBZ files for Anthropic vision input.
-
-A CBZ is a plain ZIP of image files. Pages are ordered by sorted (lexicographic)
-entry names — matches how every CBZ reader lays them out.
-
-This module is deliberately stdlib-only: zipfile + base64. Easier to test,
-easier to audit, no image-processing dependencies leak into the container.
-"""
+"""Extract CBZ pages as Anthropic vision image blocks. Oversize pages
+(>5 MiB, common on hi-res scans) are downscaled to JPEG via Pillow;
+under-limit pages pass through untouched."""
 
 from __future__ import annotations
 
 import base64
+import io
+import sys
 import zipfile
 from pathlib import Path
 
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+
+ANTHROPIC_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+# 64 KiB safety margin under the hard cap.
+COMPRESSION_TARGET_BYTES = ANTHROPIC_IMAGE_MAX_BYTES - 64 * 1024
+MIN_COMPRESSION_SCALE = 0.1
 
 
 class CoverExtractError(Exception):
@@ -62,29 +64,65 @@ def extract_pages_as_anthropic_images(
     cbz_path: Path,
     page_indices: list[int] | None = None,
 ) -> list[dict]:
-    """Return pages formatted as Anthropic messages API `image` blocks:
-
-        {"type": "image", "source": {
-            "type": "base64",
-            "media_type": "image/jpeg",
-            "data": "<base64>",
-        }}
-
-    Mix-and-match formats are handled per-page; MIME detected from magic
-    bytes so the caller doesn't have to pre-sort.
-    """
+    """Return pages as Anthropic `image` content blocks. Oversize pages
+    are JPEG-recompressed to fit under the 5 MiB limit; pages that can't
+    be compressed enough are skipped with a stderr warning."""
     pages = extract_pages(cbz_path, page_indices)
     out = []
     for data in pages:
+        try:
+            prepared, media_type = _prepare_for_vision(data)
+        except _CompressionImpossible as e:
+            print(
+                f"cover_extractor: skipping oversized page from {cbz_path}: {e}",
+                file=sys.stderr,
+            )
+            continue
         out.append({
             "type": "image",
             "source": {
                 "type": "base64",
-                "media_type": detect_mime_type(data),
-                "data": base64.b64encode(data).decode("ascii"),
+                "media_type": media_type,
+                "data": base64.b64encode(prepared).decode("ascii"),
             },
         })
     return out
+
+
+class _CompressionImpossible(Exception):
+    pass
+
+
+def _prepare_for_vision(raw: bytes) -> tuple[bytes, str]:
+    """Return (bytes, media_type). Pass-through if already under limit;
+    otherwise decode + iteratively halve dimensions until re-encoded
+    JPEG fits. Pillow is imported lazily so callers that never hit
+    compression don't pay the import cost."""
+    if len(raw) <= COMPRESSION_TARGET_BYTES:
+        return raw, detect_mime_type(raw)
+
+    from PIL import Image  # type: ignore
+
+    img = Image.open(io.BytesIO(raw))
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+
+    width, height = img.size
+    scale = 1.0
+    while scale >= MIN_COMPRESSION_SCALE:
+        target = img if scale == 1.0 else img.resize(
+            (max(1, int(width * scale)), max(1, int(height * scale))),
+            Image.LANCZOS,
+        )
+        buf = io.BytesIO()
+        target.save(buf, format="JPEG", quality=85, optimize=True)
+        if buf.tell() <= COMPRESSION_TARGET_BYTES:
+            return buf.getvalue(), "image/jpeg"
+        scale *= 0.5
+
+    raise _CompressionImpossible(
+        f"could not compress {len(raw)} bytes under {COMPRESSION_TARGET_BYTES}"
+    )
 
 
 def detect_mime_type(page_bytes: bytes) -> str:
