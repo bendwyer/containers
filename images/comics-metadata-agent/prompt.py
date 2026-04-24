@@ -15,6 +15,15 @@ import json
 from typing import Any
 
 
+# Anthropic requires this EXACT string as the system message when
+# authenticating with an OAuth token (subscription-tied). Any real
+# instructions must be placed in the first user message. If the text
+# deviates even slightly the API returns 401.
+# Source: https://github.com/thomwebb/gac/blob/main/src/gac/providers/claude_code.py
+# + https://github.com/EurekaClaw/EurekaClaw/blob/main/eurekaclaw/ccproxy_manager.py
+OAUTH_SYSTEM_MESSAGE = "You are Claude Code, Anthropic's official CLI for Claude."
+
+
 SYSTEM_PROMPT = """You are a metadata resolver for a home comic-book library \
 pipeline. You receive one book per turn: a filename, source context, cover \
 images, and lists of candidate matches from ComicVine and existing Kavita \

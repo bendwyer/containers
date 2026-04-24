@@ -23,7 +23,7 @@ from cover_extractor import extract_pages_as_anthropic_images
 from decision_log import DecisionLog
 from filename_parser import parse_filename
 from kavita_client import KavitaClient
-from prompt import SYSTEM_PROMPT, TOOLS, build_user_text
+from prompt import OAUTH_SYSTEM_MESSAGE, SYSTEM_PROMPT, TOOLS, build_user_text
 
 
 # Cover page indices we send to the model. Page 0 = front cover (always
@@ -42,6 +42,7 @@ class AgentRunner:
         decision_log: DecisionLog,
         model: str,
         max_tool_rounds: int = 8,
+        oauth_mode: bool = False,
     ):
         self.claude = claude_client
         self.kavita = kavita
@@ -49,6 +50,9 @@ class AgentRunner:
         self.decision_log = decision_log
         self.model = model
         self.max_tool_rounds = max_tool_rounds
+        # OAuth tokens require a fixed system message + the real prompt
+        # injected into the first user message. See prompt.py.
+        self.oauth_mode = oauth_mode
 
     # ---- orchestration ----------------------------------------------------
 
@@ -143,11 +147,20 @@ class AgentRunner:
         item_context: dict[str, Any],
         cover_images: list[dict],
     ) -> dict[str, Any]:
+        user_text = build_user_text(item_context)
+        if self.oauth_mode:
+            # OAuth auth: system must be the constrained Claude-Code string
+            # and our real prompt prepends the user text.
+            system_message = OAUTH_SYSTEM_MESSAGE
+            user_text = f"{SYSTEM_PROMPT}\n\n---\n\n{user_text}"
+        else:
+            system_message = SYSTEM_PROMPT
+
         messages: list[dict] = [
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": build_user_text(item_context)},
+                    {"type": "text", "text": user_text},
                     *cover_images,
                 ],
             }
@@ -157,7 +170,7 @@ class AgentRunner:
             response = self.claude.messages.create(
                 model=self.model,
                 max_tokens=4096,
-                system=SYSTEM_PROMPT,
+                system=system_message,
                 tools=TOOLS,
                 messages=messages,
             )
