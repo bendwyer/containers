@@ -55,15 +55,19 @@ from apply import (
 from bundle_planner import ItemPlan, plan_bundle
 from comicvine_client import ComicVineClient
 from kavita_client import KavitaClient
+from mangabaka_client import MangaBakaClient
 
 
 _VERSION = "0.3.0"
 
 
-# Issue ID is embedded in two places by comictagger; <Web> is more reliable
-# (CV URL pattern is stable), <Notes> is a fallback.
-_WEB_ID_RE = re.compile(r"/4000-(\d+)/")
+# ID is embedded in <Web> (most reliable) and <Notes> (fallback). Source is
+# derived from which pattern matches: ComicVine URL is comicvine.gamespot.com
+# with /4000-NNN/ permalink; MangaBaka URL is mangabaka.dev/series/NNN.
+_CV_WEB_ID_RE = re.compile(r"/4000-(\d+)/")
+_MB_WEB_ID_RE = re.compile(r"mangabaka\.dev/series/(\d+)")
 _NOTES_ID_RE = re.compile(r"\[Issue ID (\d+)\]")
+_NOTES_MB_HINT_RE = re.compile(r"MangaBaka", re.IGNORECASE)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -104,11 +108,12 @@ def main(argv: list[str] | None = None) -> int:
     cv = ComicVineClient(
         comicvine_key, user_agent=f"comics-metadata-agent-replan/{_VERSION}"
     )
-    plans = plan_bundle(eligible, cv)
+    mb = MangaBakaClient(user_agent=f"comics-metadata-agent-replan/{_VERSION}")
+    plans = plan_bundle(eligible, cv, mb)
     print(f"Decisions: total={len(decisions)} eligible={len(eligible)} planned={len(plans)}")
 
     file_index = _build_issue_id_index(library_root)
-    print(f"Library scan: indexed {len(file_index)} files by issue_id")
+    print(f"Library scan: indexed {len(file_index)} files by (source, issue_id)")
 
     kavita = KavitaClient(args.kavita_url, kavita_key)
     kavita.authenticate()
@@ -121,9 +126,12 @@ def main(argv: list[str] | None = None) -> int:
     affected_dirs: set[Path] = set()
 
     for plan in plans:
-        cbz = file_index.get(plan.issue_id)
+        cbz = file_index.get((plan.source, plan.issue_id))
         if cbz is None:
-            print(f"MISS {plan.filename}  issue_id={plan.issue_id} not found in library")
+            print(
+                f"MISS {plan.filename}  ({plan.source}, issue_id={plan.issue_id}) "
+                f"not found in library"
+            )
             n_missing += 1
             continue
         try:
@@ -188,9 +196,13 @@ def main(argv: list[str] | None = None) -> int:
 # ---- file location ------------------------------------------------------
 
 
-def _build_issue_id_index(library_root: Path) -> dict[int, Path]:
-    """Walk the library lane and index .cbz files by their CV issue_id."""
-    index: dict[int, Path] = {}
+def _build_issue_id_index(library_root: Path) -> dict[tuple[str, int], Path]:
+    """Walk the library lane and index .cbz files by (source, issue_id).
+
+    The source/id pair disambiguates: a numeric ID like 12345 could
+    coincidentally exist in both ComicVine and MangaBaka's id spaces.
+    """
+    index: dict[tuple[str, int], Path] = {}
     for cbz in library_root.rglob("*.cbz"):
         try:
             with zipfile.ZipFile(cbz, "r") as z:
@@ -199,26 +211,40 @@ def _build_issue_id_index(library_root: Path) -> dict[int, Path]:
                 xml = z.read("ComicInfo.xml").decode("utf-8")
         except (zipfile.BadZipFile, OSError):
             continue
-        iid = _extract_issue_id(xml)
-        if iid is not None:
+        key = _extract_source_and_id(xml)
+        if key is not None:
             # First-wins; duplicates would mean two files claiming the same
-            # CV issue, which is itself a problem to surface — but rare.
-            index.setdefault(iid, cbz)
+            # source+id, which is itself a problem to surface — but rare.
+            index.setdefault(key, cbz)
     return index
 
 
-def _extract_issue_id(xml: str) -> int | None:
-    """Pull issue_id from <Web> URL or <Notes> tag."""
+def _extract_source_and_id(xml: str) -> tuple[str, int] | None:
+    """Pull (source, issue_id) from ComicInfo.xml.
+
+    Source detection is Web-URL-based first (most reliable). Falls back to
+    Notes parsing when Web doesn't match a known pattern; in that case the
+    'MangaBaka' substring in Notes flips source to mangabaka, otherwise it
+    defaults to comicvine.
+    """
     web = re.search(r"<Web>([^<]+)</Web>", xml)
     if web:
-        m = _WEB_ID_RE.search(web.group(1))
+        url = web.group(1)
+        m = _CV_WEB_ID_RE.search(url)
         if m:
-            return int(m.group(1))
+            return ("comicvine", int(m.group(1)))
+        m = _MB_WEB_ID_RE.search(url)
+        if m:
+            return ("mangabaka", int(m.group(1)))
     notes = re.search(r"<Notes>([^<]+)</Notes>", xml)
     if notes:
-        m = _NOTES_ID_RE.search(notes.group(1))
+        notes_text = notes.group(1)
+        m = _NOTES_ID_RE.search(notes_text)
         if m:
-            return int(m.group(1))
+            source = (
+                "mangabaka" if _NOTES_MB_HINT_RE.search(notes_text) else "comicvine"
+            )
+            return (source, int(m.group(1)))
     return None
 
 

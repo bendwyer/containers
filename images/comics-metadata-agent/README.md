@@ -31,8 +31,9 @@ Layout
 - `apply.py` — bundle-aware applier. Reads decision log, runs planner,
   writes ComicInfo.xml via comictagger `--id`, moves files into the library.
 - `replan.py` — companion to apply. Walks the library, brings already-shelved
-  files in line with the current planner output (CV-tagged files only today;
-  MangaBaka URL-pattern extraction is a future extension).
+  files in line with the current planner output. Indexes by `(source,
+  issue_id)` derived from each file's `<Web>` URL (or `<Notes>` fallback)
+  so ComicVine and MangaBaka tags are handled cleanly side by side.
 - `bundle_planner.py` — three-phase compiler (hydrate → group → plan).
   Source-aware grouping: `(source, publisher, base_name)` so MangaBaka and
   ComicVine items don't accidentally merge.

@@ -18,30 +18,49 @@ from bundle_planner import ItemPlan
 from replan import (
     _build_issue_id_index,
     _canonical_filename,
-    _extract_issue_id,
+    _extract_source_and_id,
     _read_current_tags,
     _tags_match_plan,
 )
 from apply import LANE_CONFIG
 
 
-class ExtractIssueIdTests(unittest.TestCase):
-    def test_from_web_url(self):
+class ExtractSourceAndIdTests(unittest.TestCase):
+    def test_cv_web_url(self):
         xml = (
             "<ComicInfo>"
             "<Web>https://comicvine.gamespot.com/foo/4000-972584/</Web>"
             "</ComicInfo>"
         )
-        self.assertEqual(_extract_issue_id(xml), 972584)
+        self.assertEqual(_extract_source_and_id(xml), ("comicvine", 972584))
 
-    def test_from_notes_fallback(self):
+    def test_mangabaka_web_url(self):
+        xml = (
+            "<ComicInfo>"
+            "<Web>https://mangabaka.dev/series/12345</Web>"
+            "</ComicInfo>"
+        )
+        self.assertEqual(_extract_source_and_id(xml), ("mangabaka", 12345))
+
+    def test_cv_from_notes_fallback(self):
         xml = (
             "<ComicInfo>"
             "<Notes>Tagged with ComicTagger using info from Comic Vine. "
             "[Issue ID 123456]</Notes>"
             "</ComicInfo>"
         )
-        self.assertEqual(_extract_issue_id(xml), 123456)
+        self.assertEqual(_extract_source_and_id(xml), ("comicvine", 123456))
+
+    def test_mangabaka_from_notes_fallback(self):
+        # Notes mentions MangaBaka — flips source even though ID format is
+        # the same '[Issue ID NNN]' pattern.
+        xml = (
+            "<ComicInfo>"
+            "<Notes>Tagged with ComicTagger using info from MangaBaka. "
+            "[Issue ID 789]</Notes>"
+            "</ComicInfo>"
+        )
+        self.assertEqual(_extract_source_and_id(xml), ("mangabaka", 789))
 
     def test_web_takes_precedence_over_notes(self):
         xml = (
@@ -50,15 +69,25 @@ class ExtractIssueIdTests(unittest.TestCase):
             "<Notes>[Issue ID 999]</Notes>"
             "</ComicInfo>"
         )
-        self.assertEqual(_extract_issue_id(xml), 1)
+        self.assertEqual(_extract_source_and_id(xml), ("comicvine", 1))
+
+    def test_mb_web_beats_cv_notes(self):
+        # If web is MB but notes says Comic Vine, web wins.
+        xml = (
+            "<ComicInfo>"
+            "<Web>https://mangabaka.dev/series/42</Web>"
+            "<Notes>using info from Comic Vine. [Issue ID 999]</Notes>"
+            "</ComicInfo>"
+        )
+        self.assertEqual(_extract_source_and_id(xml), ("mangabaka", 42))
 
     def test_returns_none_when_neither_present(self):
         xml = "<ComicInfo><Series>Foo</Series></ComicInfo>"
-        self.assertIsNone(_extract_issue_id(xml))
+        self.assertIsNone(_extract_source_and_id(xml))
 
     def test_returns_none_for_malformed_web(self):
-        xml = "<ComicInfo><Web>not a cv url</Web></ComicInfo>"
-        self.assertIsNone(_extract_issue_id(xml))
+        xml = "<ComicInfo><Web>not a known url</Web></ComicInfo>"
+        self.assertIsNone(_extract_source_and_id(xml))
 
 
 class TagsMatchPlanTests(unittest.TestCase):
@@ -166,7 +195,36 @@ class FileIndexTests(unittest.TestCase):
             self._make_cbz(root / "deep" / "nested" / "c.cbz", 300)
 
             index = _build_issue_id_index(root)
-            self.assertEqual(set(index.keys()), {100, 200, 300})
+            self.assertEqual(
+                set(index.keys()),
+                {("comicvine", 100), ("comicvine", 200), ("comicvine", 300)},
+            )
+
+    def test_indexes_mangabaka_and_comicvine_separately(self):
+        # Same numeric ID with different sources must not collide.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cv_path = root / "Foo (2020)" / "cv.cbz"
+            cv_path.parent.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(cv_path, "w") as z:
+                z.writestr(
+                    "ComicInfo.xml",
+                    "<ComicInfo>"
+                    "<Web>https://comicvine.gamespot.com/foo/4000-42/</Web>"
+                    "</ComicInfo>",
+                )
+            mb_path = root / "Bar" / "mb.cbz"
+            mb_path.parent.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(mb_path, "w") as z:
+                z.writestr(
+                    "ComicInfo.xml",
+                    "<ComicInfo>"
+                    "<Web>https://mangabaka.dev/series/42</Web>"
+                    "</ComicInfo>",
+                )
+            index = _build_issue_id_index(root)
+            self.assertEqual(index[("comicvine", 42)], cv_path)
+            self.assertEqual(index[("mangabaka", 42)], mb_path)
 
     def test_skips_missing_comicinfo(self):
         with tempfile.TemporaryDirectory() as td:
