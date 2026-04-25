@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""Replay agent decisions: write ComicInfo.xml + move files into the library.
+"""Bundle-aware apply: replay the agent's decision log into the library.
 
-Reads <decision-log-dir>/<source_id>.jsonl and applies each `match` decision:
+Reads <decision-log-dir>/<source_id>.jsonl, plans canonical metadata across
+the whole bundle (see bundle_planner.py), then for each item:
+
   1. comictagger -s --id <issue_id> --cv-use-series-start-as-volume on the
-     source file to refresh ComicInfo.xml with canonical Volume.
-  2. comictagger -r --tags-read cr --move into the lane-appropriate folder.
-  3. Append <source_id>.applied.jsonl checkpoint for idempotent re-runs.
+     source file to write CV-derived ComicInfo.xml.
+  2. Python ComicInfo.xml override: rewrite Series/Volume/Number/Title to
+     the planner's canonical values (subtitle preserved, sequential numbers,
+     synthesized Titles for annual one-shots).
+  3. Resolve destination folder via Kavita lookup (name + canonical year)
+     or construct from the planner's canonical Series + Volume.
+  4. comictagger -r --tags-read cr --move into the destination folder.
+  5. Append <source_id>.applied.jsonl checkpoint for idempotent re-runs.
 
 Lane (comics vs manga) and library root are derived from --unmatched-dir.
-Folder convention follows the lane (comics: "Series (year)", manga: "Series").
 
 Usage:
     apply.py \\
@@ -22,7 +28,7 @@ Usage:
 Exit codes:
   0 = ran to completion (some matches may have failed; check stderr)
   1 = ran but at least one match failed to apply
-  2 = configuration / input error (missing files, bad path, no decisions)
+  2 = configuration / input error
 """
 
 from __future__ import annotations
@@ -30,25 +36,27 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import requests
 
+from bundle_planner import ItemPlan, plan_bundle
 from comicvine_client import ComicVineClient
 from kavita_client import KavitaClient
 
 
-_VERSION = "0.1.6"
+_VERSION = "0.1.7"
 
 
-# Per-lane output conventions. Filename template is fed to comictagger's
-# -r --template flag and uses tags written in the previous -s step. Folder
-# pattern is computed in Python from CV volume metadata and passed via --dir,
-# so the template handles only the filename portion.
+# Per-lane file output conventions. The planner produces canonical
+# Series/Volume/Number/Title; the lane decides folder shape and filename
+# template that comictagger -r uses on top of those tags.
 LANE_CONFIG: dict[str, dict[str, Any]] = {
     "comics": {
         "filename_template": "{series} ({year}) #{issue}",
@@ -60,11 +68,7 @@ LANE_CONFIG: dict[str, dict[str, Any]] = {
     },
 }
 
-# Tolerance for matching CV start_year to Kavita release_year — comictagger
-# can drift ±1 between solicit/cover-date conventions. Beyond that we treat
-# the Kavita series as a different volume entirely.
 YEAR_TOLERANCE = 1
-
 _YEAR_SUFFIX = re.compile(r"\s*\(\d{4}\)\s*$")
 
 
@@ -97,25 +101,29 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     decisions = _read_jsonl(decision_log)
-    matches = [d for d in decisions if d.get("decision") == "match"]
-    if not matches:
-        print("No match decisions to apply.")
-        return 0
 
     accepted_levels = (
         {"high"} if args.min_confidence == "high" else {"high", "medium"}
     )
-    gated = [d for d in matches if d.get("confidence", "high") in accepted_levels]
-    skipped_for_confidence = len(matches) - len(gated)
+    eligible = [
+        d for d in decisions
+        if d.get("decision") == "match"
+        and d.get("confidence", "high") in accepted_levels
+    ]
+
+    cv = ComicVineClient(
+        comicvine_key, user_agent=f"comics-metadata-agent-apply/{_VERSION}"
+    )
+    plans = plan_bundle(eligible, cv)
 
     applied_set = {r["filename"] for r in _read_jsonl(applied_log)}
-    todo = [d for d in gated if d["filename"] not in applied_set]
-    skipped_already_applied = len(gated) - len(todo)
+    todo = [p for p in plans if p.filename not in applied_set]
+    skipped_already_applied = len(plans) - len(todo)
 
     print(
-        f"Decisions: total={len(decisions)} match={len(matches)} "
-        f"below-{args.min_confidence}={skipped_for_confidence} "
-        f"already-applied={skipped_already_applied} to-apply={len(todo)}"
+        f"Decisions: total={len(decisions)} eligible={len(eligible)} "
+        f"planned={len(plans)} already-applied={skipped_already_applied} "
+        f"to-apply={len(todo)}"
     )
 
     if not todo:
@@ -123,35 +131,29 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     kavita = KavitaClient(args.kavita_url, kavita_key)
-    cv = ComicVineClient(
-        comicvine_key, user_agent=f"comics-metadata-agent-apply/{_VERSION}"
-    )
     kavita.authenticate()
 
     applied_count = 0
     failed: list[tuple[str, str]] = []
-    for d in todo:
-        filename = d["filename"]
-        src = args.unmatched_dir / filename
+    for plan in todo:
+        src = args.unmatched_dir / plan.filename
         if not src.exists():
-            print(f"FAIL {filename}: source file missing", file=sys.stderr)
-            failed.append((filename, "source-missing"))
+            print(f"FAIL {plan.filename}: source file missing", file=sys.stderr)
+            failed.append((plan.filename, "source-missing"))
             continue
         try:
-            dest_folder = _resolve_destination(d, library_root, kavita, cv, config)
-            _apply_one(
-                src,
-                d["issue_id"],
-                dest_folder,
-                config["filename_template"],
-                comicvine_key,
-            )
-            _append_applied(applied_log, args.source_id, d, dest_folder)
+            dest_folder = _resolve_destination(plan, library_root, kavita, config)
+            _apply_one(src, plan, dest_folder, config["filename_template"], comicvine_key)
+            _append_applied(applied_log, args.source_id, plan, dest_folder)
             applied_count += 1
-            print(f"OK   {filename} -> {dest_folder}/")
+            print(
+                f"OK   {plan.filename} -> {dest_folder}/  "
+                f"(series={plan.series!r} vol={plan.volume} #{plan.number} "
+                f"title={plan.title!r})"
+            )
         except Exception as e:
-            print(f"FAIL {filename}: {type(e).__name__}: {e}", file=sys.stderr)
-            failed.append((filename, str(e)))
+            print(f"FAIL {plan.filename}: {type(e).__name__}: {e}", file=sys.stderr)
+            failed.append((plan.filename, str(e)))
 
     print()
     print(f"Applied: {applied_count}/{len(todo)}  |  cv_calls={cv.call_count}")
@@ -163,14 +165,10 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-# ---- lane derivation -----------------------------------------------------
+# ---- lane derivation ----------------------------------------------------
 
 
 def _derive_lane(unmatched_dir: Path) -> str:
-    """Lane is the path segment between 'incoming' and '_unmatched'.
-
-    Hard-fails on any non-conforming layout so we don't silently mis-route.
-    """
     parts = list(unmatched_dir.parts)
     try:
         i = parts.index("incoming")
@@ -191,7 +189,6 @@ def _derive_lane(unmatched_dir: Path) -> str:
 
 
 def _derive_library_root(unmatched_dir: Path) -> Path:
-    """Mirror /<base>/incoming/<lane>/_unmatched -> /<base>/library/<lane>"""
     parts = list(unmatched_dir.parts)
     i = parts.index("incoming")
     lane = parts[i + 1]
@@ -199,39 +196,28 @@ def _derive_library_root(unmatched_dir: Path) -> Path:
     return base / "library" / lane
 
 
-# ---- destination resolution ---------------------------------------------
+# ---- destination resolution --------------------------------------------
 
 
 def _resolve_destination(
-    decision: dict[str, Any],
+    plan: ItemPlan,
     library_root: Path,
     kavita: KavitaClient,
-    cv: ComicVineClient,
     config: dict[str, Any],
 ) -> Path:
-    """Return the absolute folder path for this decision.
-
-    Prefer an existing Kavita series folder when its name matches and its
-    release_year is within YEAR_TOLERANCE of CV start_year. Otherwise
-    construct from the canonical CV volume name + start_year. Constructing
-    fresh lands the file in a NEW folder rather than risking the wrong
-    existing one when years disagree wildly.
-    """
-    vol = cv.get_volume(decision["volume_id"])
-    vname = vol.get("name") or "?"
-    vyear = vol.get("start_year") or "?"
-
-    hits = kavita.search_series(vname)
-    vname_norm = _norm_name(vname)
-    exact = [h for h in hits if _norm_name(h.get("name")) == vname_norm]
+    """Prefer existing Kavita series folder when name+year matches within
+    YEAR_TOLERANCE; else construct from the planner's canonical values."""
+    hits = kavita.search_series(plan.series)
+    series_norm = _norm_name(plan.series)
+    exact = [h for h in hits if _norm_name(h.get("name")) == series_norm]
 
     chosen = None
-    chosen_delta = None
+    chosen_delta: int | None = None
     for h in exact:
         meta = kavita.get_series_metadata(h["series_id"])
         ky = meta.get("release_year")
-        if ky and _years_close(vyear, ky):
-            delta = abs(int(vyear) - int(ky))
+        if ky and _years_close(plan.volume, ky):
+            delta = abs(int(plan.volume) - int(ky))
             if chosen_delta is None or delta < chosen_delta:
                 chosen = h
                 chosen_delta = delta
@@ -241,18 +227,13 @@ def _resolve_destination(
         if folder:
             return Path(folder)
 
-    safe = _safe_folder(vname)
+    safe = _safe_folder(plan.series)
     if config["folder_with_year"]:
-        return library_root / f"{safe} ({vyear})"
+        return library_root / f"{safe} ({plan.volume})"
     return library_root / safe
 
 
 def _get_kavita_folder(kavita: KavitaClient, series_id: int) -> str | None:
-    """Fetch the on-disk folder path for a Kavita series, or None on miss.
-
-    Uses the Series detail endpoint, not /api/Series/metadata which omits
-    folderPath. Treats any non-200 as 'no folder' rather than failing.
-    """
     r = requests.get(
         f"{kavita.base_url}/api/Series/{series_id}",
         headers=kavita._auth_headers(),
@@ -263,28 +244,23 @@ def _get_kavita_folder(kavita: KavitaClient, series_id: int) -> str | None:
     return (r.json() or {}).get("folderPath")
 
 
-# ---- comictagger orchestration ------------------------------------------
+# ---- comictagger orchestration -----------------------------------------
 
 
 def _apply_one(
     src: Path,
-    issue_id: int,
+    plan: ItemPlan,
     dest_folder: Path,
     filename_template: str,
     cv_key: str,
 ) -> None:
-    """Run comictagger -s (write tags) then -r --move to dest_folder.
-
-    On comictagger save failure the source file is unmodified (per
-    comictagger's contract), so a re-run will retry cleanly because the
-    applied log only records on success.
-    """
+    """1) comictagger save → 2) python override ComicInfo.xml → 3) move."""
     dest_folder.mkdir(parents=True, exist_ok=True)
 
     write = subprocess.run(
         [
             "comictagger", "--no-gui", "-s", "-o", "-f",
-            "--id", str(issue_id),
+            "--id", str(plan.issue_id),
             "--tags-write", "cr",
             "--source", "comicvine",
             "--comicvine-key", cv_key,
@@ -300,6 +276,8 @@ def _apply_one(
             f"comictagger save failed (rc={write.returncode}): "
             f"{(write.stderr or write.stdout).strip()[:500]}"
         )
+
+    _override_comicinfo(src, plan)
 
     move = subprocess.run(
         [
@@ -326,31 +304,71 @@ def _apply_one(
         )
 
 
-# ---- applied log --------------------------------------------------------
+def _override_comicinfo(cbz_path: Path, plan: ItemPlan) -> None:
+    """Rewrite Series/Volume/Number/Title in the just-written ComicInfo.xml
+    to the planner's canonical values. Preserves all other tags + Pages."""
+    with zipfile.ZipFile(cbz_path, "r") as zin:
+        if "ComicInfo.xml" not in zin.namelist():
+            raise RuntimeError(f"no ComicInfo.xml after comictagger save: {cbz_path}")
+        xml = zin.read("ComicInfo.xml").decode("utf-8")
+
+    new_xml = xml
+    new_xml = _set_field(new_xml, "Series", plan.series)
+    new_xml = _set_field(new_xml, "Volume", str(plan.volume))
+    new_xml = _set_field(new_xml, "Number", str(plan.number))
+    if plan.title:
+        new_xml = _set_field(new_xml, "Title", plan.title)
+    if new_xml == xml:
+        return
+
+    tmp = cbz_path.with_suffix(cbz_path.suffix + ".tmp")
+    with zipfile.ZipFile(cbz_path, "r") as zin, zipfile.ZipFile(
+        tmp, "w", zipfile.ZIP_DEFLATED
+    ) as zout:
+        for info in zin.infolist():
+            data = (
+                new_xml.encode("utf-8")
+                if info.filename == "ComicInfo.xml"
+                else zin.read(info.filename)
+            )
+            zout.writestr(info, data)
+    shutil.move(str(tmp), str(cbz_path))
+
+
+def _set_field(xml: str, tag: str, value: str) -> str:
+    new_inner = f"<{tag}>{value}</{tag}>"
+    if re.search(rf"<{tag}>[^<]*</{tag}>", xml):
+        return re.sub(rf"<{tag}>[^<]*</{tag}>", new_inner, xml, count=1)
+    return xml.replace("</ComicInfo>", f"  {new_inner}\n</ComicInfo>")
+
+
+# ---- applied log -------------------------------------------------------
 
 
 def _append_applied(
     log_path: Path,
     source_id: str,
-    decision: dict[str, Any],
+    plan: ItemPlan,
     dest_folder: Path,
 ) -> None:
-    """Append one record to <source_id>.applied.jsonl. Idempotent re-runs
-    use this to skip already-applied filenames."""
     log_path.parent.mkdir(parents=True, exist_ok=True)
     record = {
-        "filename": decision["filename"],
-        "issue_id": decision["issue_id"],
-        "volume_id": decision["volume_id"],
+        "filename": plan.filename,
+        "issue_id": plan.issue_id,
+        "volume_id": plan.volume_id,
+        "series": plan.series,
+        "volume": plan.volume,
+        "number": plan.number,
+        "title": plan.title,
         "destination_folder": str(dest_folder),
         "source_id": source_id,
         "applied_at": datetime.now(timezone.utc).isoformat(),
     }
     with log_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record) + "\n")
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-# ---- helpers ------------------------------------------------------------
+# ---- helpers -----------------------------------------------------------
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -366,13 +384,10 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def _norm_name(name: str | None) -> str:
-    """Strip trailing (YYYY) and lowercase. Kavita series names embed the
-    year; ComicVine names don't."""
     return _YEAR_SUFFIX.sub("", (name or "")).strip().lower()
 
 
 def _safe_folder(name: str | None) -> str:
-    """Replace fs-unsafe chars so 'No/One' becomes 'No-One'."""
     return re.sub(r"[/\\]", "-", (name or "")).strip(" .")
 
 
@@ -392,20 +407,17 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         description=__doc__.splitlines()[0] if __doc__ else "",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("--source-id", required=True,
-                   help="Source identifier (matches decision log filename).")
+    p.add_argument("--source-id", required=True)
     p.add_argument("--unmatched-dir", required=True, type=Path,
                    help="Path like /books/incoming/<lane>/_unmatched. "
                         "Lane and library root are derived from this.")
-    p.add_argument("--decision-log-dir", required=True, type=Path,
-                   help="Where <source_id>.jsonl + .applied.jsonl live.")
+    p.add_argument("--decision-log-dir", required=True, type=Path)
     p.add_argument("--kavita-url",
                    default="http://kavita.books.svc.cluster.local:5000")
     p.add_argument("--kavita-api-key-file", required=True, type=Path)
     p.add_argument("--comicvine-api-key-file", required=True, type=Path)
     p.add_argument("--min-confidence", choices=["high", "medium"], default="high",
-                   help="Apply only matches at or above this confidence level. "
-                        "Below-confidence matches stay in _unmatched/ for review.")
+                   help="Apply only matches at or above this confidence level.")
     return p.parse_args(argv)
 
 
