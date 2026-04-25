@@ -181,19 +181,35 @@ def _plan_group(group: list[dict[str, Any]]) -> list[ItemPlan]:
         and all((it["cv_volume"].get("count_of_issues") or 0) == 1 for it in group)
     )
 
-    plans: list[ItemPlan] = []
-    for item, number in zip(ordered, numbers):
-        vol = item["cv_volume"]
-        issue = item["cv_issue"]
-        decision = item["decision"]
-
-        title = _resolve_title(
-            issue=issue,
-            volume=vol,
+    # Pass 1: resolve raw Titles per item.
+    raw_titles = [
+        _resolve_title(
+            issue=it["cv_issue"],
+            volume=it["cv_volume"],
             number=number,
             annual_pattern=annual_pattern,
         )
-        year = _issue_year(issue) or _start_year(item)
+        for it, number in zip(ordered, numbers)
+    ]
+
+    # Pass 2: group-level Volume-width normalization. Detect dominant width
+    # across all "Volume <N>" Titles in the group and renumber to that width
+    # so a single CV outlier (e.g., "Volume 007" amid "Volume 1"–"Volume 6")
+    # gets pulled in line.
+    width = _detect_dominant_volume_width(raw_titles)
+
+    plans: list[ItemPlan] = []
+    for item, number, raw in zip(ordered, numbers, raw_titles):
+        decision = item["decision"]
+
+        # Per-item normalization: width → series-prefix strip → casing.
+        title = raw
+        if width is not None:
+            title = _apply_volume_width(title, width)
+        title = _strip_series_redundancy(title, canonical_series)
+        title = _normalize_casing(title)
+
+        year = _issue_year(item["cv_issue"]) or _start_year(item)
 
         plans.append(ItemPlan(
             filename=decision["filename"],
@@ -286,3 +302,67 @@ def _resolve_title(
             return f"One-Shot {year}"
 
     return ""
+
+
+# ---- Title normalization (sibling-aware) --------------------------------
+
+
+_VOLUME_NUM_RE = re.compile(r"^volume\s+(\d+)(.*)$", re.IGNORECASE)
+
+
+def _detect_dominant_volume_width(titles: list[str]) -> int | None:
+    """Most common digit-width across Titles matching '^Volume <N>'.
+
+    Returns None when no Title matches. Used to pull outliers in line —
+    e.g., 6 of 7 RB Titles are 'Volume 1'..'Volume 6' (width=1) and one is
+    'Volume 007' (width=3); dominant=1, the outlier becomes 'Volume 7'.
+    """
+    widths: list[int] = []
+    for t in titles:
+        m = _VOLUME_NUM_RE.match(t)
+        if m:
+            widths.append(len(m.group(1)))
+    if not widths:
+        return None
+    return Counter(widths).most_common(1)[0][0]
+
+
+def _apply_volume_width(title: str, width: int) -> str:
+    """Renumber a 'Volume <N>...' Title to fixed digit width. Preserves
+    case-insensitively-matched 'Volume' as canonical 'Volume' on output."""
+    m = _VOLUME_NUM_RE.match(title)
+    if not m:
+        return title
+    n = int(m.group(1))
+    return f"Volume {n:0{width}d}{m.group(2)}"
+
+
+def _strip_series_redundancy(title: str, series: str) -> str:
+    """Drop a redundant Series prefix from Title. Conservative: matches
+    'Series: <rest>' or exact equality only — never bare-prefix to avoid
+    eating legitimate sentence starts."""
+    if not title or not series:
+        return title
+    t = title.strip()
+    s = series.strip()
+    if t.lower() == s.lower():
+        return ""
+    prefix = f"{s.lower()}: "
+    if t.lower().startswith(prefix):
+        return t[len(prefix):].strip()
+    return title
+
+
+def _normalize_casing(title: str) -> str:
+    """Title-case Titles that are entirely uppercase. Skips short strings
+    (likely acronyms) and anything with mixed case (already styled)."""
+    if not title:
+        return title
+    has_alpha = any(c.isalpha() for c in title)
+    if not has_alpha:
+        return title
+    if any(c.islower() for c in title):
+        return title  # already mixed-case; trust CV
+    if len(title) <= 8:
+        return title  # short — likely an acronym (e.g., 'TPB', 'OGN')
+    return title.title()
