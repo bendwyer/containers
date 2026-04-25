@@ -20,9 +20,13 @@ to comictagger + a python ComicInfo.xml override pass.
 from __future__ import annotations
 
 import re
+import sys
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any
+
+from comicvine_client import ComicVineAPIError
+from mangabaka_client import MangaBakaAPIError
 
 
 # Sibling start-year distance beyond which we treat same-base-name volumes
@@ -88,19 +92,32 @@ def _hydrate(
     out = []
     for d in matches:
         source = d.get("source") or DEFAULT_SOURCE
-        if source == "comicvine":
-            volume = cv.get_volume(d["volume_id"])
-            issue = cv.get_issue(d["issue_id"])
-        elif source == "mangabaka":
-            if mb is None:
-                raise ValueError(
-                    "decision has source=mangabaka but no MangaBaka client provided"
-                )
-            series = mb.get_series(d["volume_id"])
-            volume = series
-            issue = series  # same record; MB has no per-issue data
-        else:
-            raise ValueError(f"unknown decision source: {source!r}")
+        try:
+            if source == "comicvine":
+                volume = cv.get_volume(d["volume_id"])
+                issue = cv.get_issue(d["issue_id"])
+            elif source == "mangabaka":
+                if mb is None:
+                    raise ValueError(
+                        "decision has source=mangabaka but no MangaBaka client provided"
+                    )
+                series = mb.get_series(d["volume_id"])
+                volume = series
+                issue = series  # same record; MB has no per-issue data
+            else:
+                raise ValueError(f"unknown decision source: {source!r}")
+        except (ComicVineAPIError, MangaBakaAPIError) as e:
+            # Bad id from the agent (most often issue_id / volume_id confusion)
+            # would otherwise abort the whole bundle. Drop the item; the
+            # workflow's staging sweep dead-letters its file for review.
+            print(
+                f"WARN dropping {d.get('filename')!r} from plan: "
+                f"{source} hydrate failed "
+                f"(volume_id={d.get('volume_id')}, issue_id={d.get('issue_id')}): "
+                f"{type(e).__name__}: {e}",
+                file=sys.stderr,
+            )
+            continue
         out.append({
             "decision": d,
             "source": source,
