@@ -38,7 +38,7 @@ class CliArgsTests(unittest.TestCase):
         argv = [
             "--source-id", "X",
             "--lane", "comics",
-            "--unmatched-dir", "/scratch/incoming/comics",
+            "--staging-dir", "/scratch/incoming/comics",
             "--decision-log-dir", "/books/library/.agent-decisions/comics",
             "--kavita-api-key-file", "/secret/kavita/credential",
             "--comicvine-api-key-file", "/secret/comicvine/credential",
@@ -61,7 +61,7 @@ class CliArgsTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             _parse_args([
                 "--source-id", "X",
-                "--unmatched-dir", "/x",
+                "--staging-dir", "/x",
                 "--decision-log-dir", "/y",
                 "--kavita-api-key-file", "/k",
                 "--comicvine-api-key-file", "/c",
