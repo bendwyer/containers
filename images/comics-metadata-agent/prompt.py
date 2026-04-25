@@ -59,7 +59,15 @@ DriveThru, Kobo) more often ship TPBs than monthlies; when a TPB \
 candidate and a floppy candidate share identical cover art for their \
 #1 — common for "Book One" releases — prefer the TPB. Floppy-run \
 rejection signals: issue names like "Book One (Part X of M)" or \
-"Part N of M", or a count_of_issues consistent with a long monthly run.
+"Part N of M", or a count_of_issues consistent with a long monthly run. \
+
+When a sibling in this source has already resolved to a specific volume \
+and the current item's classification is ambiguous — meaning no clear \
+Vol/Book/TPB filename token AND cover art that could plausibly belong \
+to either edition (e.g., a floppy #1 and its TPB collection sharing the \
+same cover image) — align with the sibling's volume rather than \
+splitting on weak evidence. Source coherence (rule 2) is load-bearing; \
+per-item evidence is the tiebreaker only when it's strong.
 
 5. If no Kavita precedent exists and siblings haven't resolved yet, apply \
 in order: earliest plausible volume within source publisher+year range → \
