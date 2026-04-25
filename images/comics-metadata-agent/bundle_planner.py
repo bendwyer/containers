@@ -31,6 +31,9 @@ from typing import Any
 SIBLING_YEAR_TOLERANCE = 3
 
 
+DEFAULT_SOURCE = "comicvine"
+
+
 @dataclass
 class ItemPlan:
     """Resolved canonical metadata for one item, ready for apply."""
@@ -42,19 +45,25 @@ class ItemPlan:
     number: int
     title: str
     year: str | int | None
+    source: str = DEFAULT_SOURCE
 
 
 def plan_bundle(
     decisions: list[dict[str, Any]],
     cv_client,
+    mb_client=None,
 ) -> list[ItemPlan]:
     """Return a per-item plan for every match decision.
 
     `decisions` is the parsed `<source_id>.jsonl`. Only `decision == "match"`
     entries are processed; uncertain decisions are dropped (caller handles).
+
+    `cv_client` is required (most decisions are ComicVine-sourced).
+    `mb_client` is optional; required only when any decision has
+    `source=="mangabaka"`. Callers without manga decisions can omit it.
     """
     matches = [d for d in decisions if d.get("decision") == "match"]
-    items = _hydrate(matches, cv_client)
+    items = _hydrate(matches, cv_client, mb_client)
     groups = _group(items)
     plans: list[ItemPlan] = []
     for group in groups:
@@ -65,14 +74,38 @@ def plan_bundle(
 # ---- phase 1: hydrate ---------------------------------------------------
 
 
-def _hydrate(matches: list[dict[str, Any]], cv) -> list[dict[str, Any]]:
-    """For each decision, attach CV volume + issue metadata."""
+def _hydrate(
+    matches: list[dict[str, Any]],
+    cv,
+    mb=None,
+) -> list[dict[str, Any]]:
+    """Attach per-source volume + issue metadata to each decision.
+
+    For ComicVine: separate volume + issue records.
+    For MangaBaka: a single series record acts as both (MB has no
+    separate per-issue concept; volume_id == issue_id == series_id).
+    """
     out = []
     for d in matches:
+        source = d.get("source") or DEFAULT_SOURCE
+        if source == "comicvine":
+            volume = cv.get_volume(d["volume_id"])
+            issue = cv.get_issue(d["issue_id"])
+        elif source == "mangabaka":
+            if mb is None:
+                raise ValueError(
+                    "decision has source=mangabaka but no MangaBaka client provided"
+                )
+            series = mb.get_series(d["volume_id"])
+            volume = series
+            issue = series  # same record; MB has no per-issue data
+        else:
+            raise ValueError(f"unknown decision source: {source!r}")
         out.append({
             "decision": d,
-            "cv_volume": cv.get_volume(d["volume_id"]),
-            "cv_issue": cv.get_issue(d["issue_id"]),
+            "source": source,
+            "cv_volume": volume,
+            "cv_issue": issue,
         })
     return out
 
@@ -101,13 +134,16 @@ def _group(items: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
 
 
 def _coarse_key(item: dict[str, Any]) -> tuple:
-    """(publisher, base_name) — base_name is the volume name with any
-    `: Subtitle` suffix stripped."""
+    """(source, publisher, base_name) — base_name is the volume name with
+    any `: Subtitle` suffix stripped. Source is in the key so MangaBaka
+    items never merge with ComicVine items even if they share a name; the
+    metadata sources have separate id spaces."""
+    source = item.get("source") or DEFAULT_SOURCE
     vol = item["cv_volume"]
     publisher = (vol.get("publisher") or "").strip().lower()
     name = (vol.get("name") or "").strip()
     base = name.split(":", 1)[0].strip().lower()
-    return (publisher, base)
+    return (source, publisher, base)
 
 
 def _split_by_year_distance(
@@ -220,6 +256,7 @@ def _plan_group(group: list[dict[str, Any]]) -> list[ItemPlan]:
             number=number,
             title=title,
             year=year,
+            source=item.get("source") or DEFAULT_SOURCE,
         ))
     return plans
 

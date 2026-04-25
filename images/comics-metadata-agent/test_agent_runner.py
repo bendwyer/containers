@@ -57,11 +57,13 @@ class DispatchToolTests(unittest.TestCase):
     def setUp(self):
         self.kavita = MagicMock()
         self.comicvine = MagicMock()
+        self.mangabaka = MagicMock()
         self.log, _ = _make_decision_log()
         self.runner = AgentRunner(
             claude_client=MagicMock(),
             kavita=self.kavita,
             comicvine=self.comicvine,
+            mangabaka=self.mangabaka,
             decision_log=self.log,
             model="claude-sonnet-4-6",
         )
@@ -118,11 +120,13 @@ class SafePrefetchTests(unittest.TestCase):
     def setUp(self):
         self.kavita = MagicMock()
         self.comicvine = MagicMock()
+        self.mangabaka = MagicMock()
         self.log, _ = _make_decision_log()
         self.runner = AgentRunner(
             claude_client=MagicMock(),
             kavita=self.kavita,
             comicvine=self.comicvine,
+            mangabaka=self.mangabaka,
             decision_log=self.log,
             model="claude-sonnet-4-6",
         )
@@ -161,6 +165,8 @@ class ToolUseLoopTests(unittest.TestCase):
         self.kavita.search_series.return_value = []
         self.comicvine = MagicMock()
         self.comicvine.search_volumes.return_value = []
+        self.mangabaka = MagicMock()
+        self.mangabaka.search_series.return_value = []
         self.log, self.log_dir = _make_decision_log()
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -171,6 +177,7 @@ class ToolUseLoopTests(unittest.TestCase):
             claude_client=fake_claude,
             kavita=self.kavita,
             comicvine=self.comicvine,
+            mangabaka=self.mangabaka,
             decision_log=self.log,
             model="claude-sonnet-4-6",
         )
@@ -330,6 +337,8 @@ class RunGroupTests(unittest.TestCase):
         self.kavita.search_series.return_value = []
         self.comicvine = MagicMock()
         self.comicvine.search_volumes.return_value = []
+        self.mangabaka = MagicMock()
+        self.mangabaka.search_series.return_value = []
         self.log, _ = _make_decision_log()
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -354,6 +363,7 @@ class RunGroupTests(unittest.TestCase):
             claude_client=claude,
             kavita=self.kavita,
             comicvine=self.comicvine,
+            mangabaka=self.mangabaka,
             decision_log=self.log,
             model="claude-sonnet-4-6",
         )
@@ -378,6 +388,7 @@ class RunGroupTests(unittest.TestCase):
             claude_client=claude,
             kavita=self.kavita,
             comicvine=self.comicvine,
+            mangabaka=self.mangabaka,
             decision_log=self.log,
             model="claude-sonnet-4-6",
         )
@@ -399,6 +410,7 @@ class RunGroupTests(unittest.TestCase):
             claude_client=claude,
             kavita=self.kavita,
             comicvine=self.comicvine,
+            mangabaka=self.mangabaka,
             decision_log=self.log,
             model="claude-sonnet-4-6",
         )

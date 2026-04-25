@@ -57,7 +57,7 @@ from comicvine_client import ComicVineClient
 from kavita_client import KavitaClient
 
 
-_VERSION = "0.1.7"
+_VERSION = "0.3.0"
 
 
 # Issue ID is embedded in two places by comictagger; <Web> is more reliable

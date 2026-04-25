@@ -71,13 +71,53 @@ tiebreaker — rule 4 handles that.
 6. Volume numbers in filenames are advisory, not authoritative. Publishers \
 renumber and restart. Cover art and source context are stronger signals.
 
-7. You may call tools (search_comicvine, get_comicvine_issue, \
-get_comicvine_issues_for_volume, search_kavita_series, \
-get_kavita_series_metadata) to gather more info. Use them when provided \
-information is insufficient, not speculatively. ComicVine has a 200/hr \
-rate limit shared across this run — every call counts.
+7. Source selection by lane. The user message includes a "Lane:" field. \
 
-8. End your turn by calling `record_decision` with your final answer. \
+For lane=comics: use ComicVine. Skip MangaBaka entirely.
+
+For lane=manga: try MangaBaka first. A MangaBaka candidate is a "plausible \
+match" only when ALL of: \
+  (a) the candidate's title (or romanized_title) is a close lexical match \
+      to the parsed filename series — same disambiguation threshold you'd \
+      use for ComicVine; \
+  (b) start_year is consistent with the source's inferred_year_range \
+      (when the source supplied one); \
+  (c) the candidate's type is one of "manga", "manhwa", "manhua", or "oel" \
+      — never "novel"; \
+  (d) the item is NOT an omnibus. Omnibus signals: filename contains \
+      "Omnibus", "Big Book", "Complete", "Collection", or a multi-volume \
+      range like "Vol 1-3" / "Vols 1-3"; or the cover image clearly says \
+      "Omnibus" / "Collected Edition"; or the file's page count is \
+      conspicuously high for one volume (~600+ pages); \
+  (e) the file's structure aligns with MangaBaka's data unit. MangaBaka \
+      models the original Japanese chapter-series; ComicVine often models \
+      the Western licensee's volume releases (Dark Horse Manga, VIZ Media, \
+      Yen Press, Kodansha USA, Seven Seas, Tokyopop, Vertical, etc.). When \
+      the source's inferred_publisher names a Western manga licensee, OR \
+      MangaBaka's candidate has chapter-based structure (count_of_issues / \
+      total_chapters in the dozens-to-hundreds) but the filename pattern \
+      implies discrete volumes ("Vol 1", "Vol 2"), prefer ComicVine. The \
+      file's volume structure won't map onto MB's chapter records. \
+
+If no MangaBaka candidate satisfies (a)–(e), fall back to ComicVine. The \
+common falls-to-CV cases for kobo: omnibuses (rule d) and Dark Horse / \
+VIZ / Yen Press licensed editions of older Japanese manga where CV has \
+indexed the Western volume releases (rule e — Lone Wolf and Cub, Lady \
+Snowblood, Crying Freeman, etc.). \
+
+When recording the decision, set the `source` field to the service whose \
+id you're recording: "comicvine" or "mangabaka". For MangaBaka, use the \
+series id as BOTH volume_id and issue_id (MangaBaka has no separate \
+per-issue records).
+
+8. You may call tools (search_comicvine, get_comicvine_issue, \
+get_comicvine_issues_for_volume, search_mangabaka, get_mangabaka_series, \
+search_kavita_series, get_kavita_series_metadata) to gather more info. Use \
+them when provided information is insufficient, not speculatively. ComicVine \
+has a 200/hr rate limit shared across this run; MangaBaka allows 60/min. \
+Every call counts.
+
+9. End your turn by calling `record_decision` with your final answer. \
 Do not produce trailing prose. Only pick an issue_id that appears in a \
 candidate list or a tool response — never invent one.
 """
@@ -124,6 +164,36 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "search_mangabaka",
+        "description": (
+            "Search MangaBaka for series matching a title. Returns a list of "
+            "MangaBaka series with id, name (title), native_title, "
+            "romanized_title, start_year, publisher, count_of_issues, "
+            "image_url, type (manga/manhwa/manhua/novel/oel/other). "
+            "MangaBaka models series only — there are no separate per-issue "
+            "records, so the series id IS the volume_id IS the issue_id when "
+            "you record a match."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"title": {"type": "string"}},
+            "required": ["title"],
+        },
+    },
+    {
+        "name": "get_mangabaka_series",
+        "description": (
+            "Fetch full detail for a single MangaBaka series by id. Use after "
+            "search_mangabaka when you need more fields than the search "
+            "result provides (description, all publishers, all secondary titles)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"series_id": {"type": "integer"}},
+            "required": ["series_id"],
+        },
+    },
+    {
         "name": "search_kavita_series",
         "description": (
             "Search the user's existing Kavita library for series matching a "
@@ -163,6 +233,14 @@ TOOLS: list[dict[str, Any]] = [
                 "decision": {
                     "type": "string",
                     "enum": ["match", "uncertain"],
+                },
+                "source": {
+                    "type": "string",
+                    "enum": ["comicvine", "mangabaka"],
+                    "description": (
+                        "Which metadata service the issue_id belongs to. "
+                        "Defaults to 'comicvine' if omitted."
+                    ),
                 },
                 "issue_id": {"type": "integer"},
                 "volume_id": {"type": "integer"},
@@ -206,6 +284,7 @@ def build_user_text(item_context: dict[str, Any]) -> str:
     content blocks; this text describes everything else the agent sees.
     """
     lines = []
+    lines.append(f"Lane: {item_context.get('lane', 'comics')}")
     lines.append(f"Filename: {item_context['filename']}")
     parsed = item_context.get("parsed_from_filename") or {}
     lines.append(
@@ -227,7 +306,12 @@ def build_user_text(item_context: dict[str, Any]) -> str:
     lines.append("Existing Kavita series matching the parsed name:")
     lines.append(json.dumps(kavita, indent=2))
     lines.append("")
-    candidates = item_context.get("candidates") or []
-    lines.append(f"Pre-fetched ComicVine candidates ({len(candidates)}):")
-    lines.append(json.dumps(candidates, indent=2))
+    cv_candidates = item_context.get("candidates") or []
+    lines.append(f"Pre-fetched ComicVine candidates ({len(cv_candidates)}):")
+    lines.append(json.dumps(cv_candidates, indent=2))
+    mb_candidates = item_context.get("mangabaka_candidates")
+    if mb_candidates is not None:
+        lines.append("")
+        lines.append(f"Pre-fetched MangaBaka candidates ({len(mb_candidates)}):")
+        lines.append(json.dumps(mb_candidates, indent=2))
     return "\n".join(lines)

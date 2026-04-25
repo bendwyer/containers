@@ -307,11 +307,25 @@ class CanonicalNameTests(unittest.TestCase):
 class CoarseKeyTests(unittest.TestCase):
     def test_coarse_key_strips_subtitle_and_lowercases(self):
         item = {"cv_volume": make_volume(1, "C.O.W.L.: Principles of Power", 2014)}
-        self.assertEqual(_coarse_key(item), ("image", "c.o.w.l."))
+        self.assertEqual(_coarse_key(item), ("comicvine", "image", "c.o.w.l."))
 
     def test_coarse_key_handles_no_subtitle(self):
         item = {"cv_volume": make_volume(1, "Radiant Black", 2021)}
-        self.assertEqual(_coarse_key(item), ("image", "radiant black"))
+        self.assertEqual(
+            _coarse_key(item), ("comicvine", "image", "radiant black")
+        )
+
+    def test_coarse_key_separates_by_source(self):
+        # Same publisher + base name but different sources don't merge.
+        cv_item = {
+            "cv_volume": make_volume(1, "Foo", 2020),
+            "source": "comicvine",
+        }
+        mb_item = {
+            "cv_volume": make_volume(2, "Foo", 2020),
+            "source": "mangabaka",
+        }
+        self.assertNotEqual(_coarse_key(cv_item), _coarse_key(mb_item))
 
 
 class IssueYearTests(unittest.TestCase):
