@@ -6,8 +6,7 @@ the whole bundle (see bundle_planner.py), then for each item:
 
 The --staging-dir argument is the directory containing the .cbz files to
 apply. Workflow context: /scratch/incoming/<lane>. Oneshot/_unmatched
-context: /books/incoming/<lane>/_unmatched. Reprocess context:
-/books/library/.reprocess/<source_id>.
+context: /books/incoming/<lane>/_unmatched.
 
   1. comictagger -s --id <issue_id> --cv-use-series-start-as-volume on the
      source file to write CV-derived ComicInfo.xml.
@@ -58,7 +57,7 @@ from kavita_client import KavitaClient
 from mangabaka_client import MangaBakaClient
 
 
-_VERSION = "0.3.2"
+_VERSION = "0.3.3"
 
 
 # Per-lane file output conventions. The planner produces canonical
@@ -408,8 +407,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--staging-dir", required=True, type=Path,
                    help="Directory containing the .cbz files awaiting apply. "
                         "Workflow context: /scratch/incoming/<lane>. Oneshot "
-                        "context: /books/incoming/<lane>/_unmatched. Reprocess "
-                        "context: /books/library/.reprocess/<source_id>.")
+                        "context: /books/incoming/<lane>/_unmatched.")
     p.add_argument("--library-root", type=Path, default=None,
                    help="Where canonical files land. Defaults to "
                         "/books/library/<lane>.")
