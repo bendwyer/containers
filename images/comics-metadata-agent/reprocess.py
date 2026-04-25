@@ -59,12 +59,18 @@ import json
 import shutil
 import subprocess
 import sys
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# `_extract_source_and_id` is defined in replan.py and parses a ComicInfo.xml
+# blob to return the (source, issue_id) pair. Both modules need this lookup;
+# importing keeps a single implementation rather than duplicating regexes.
+from replan import _extract_source_and_id
 
-_VERSION = "0.3.1"
+
+_VERSION = "0.3.2"
 
 # Per-lane defaults. Library root is derivable from lane, same convention as
 # apply.py / replan.py.
@@ -129,15 +135,26 @@ def main(argv: list[str] | None = None) -> int:
     staged: list[tuple[dict[str, Any], Path]] = []
     missing: list[dict[str, Any]] = []
     for rec in applied_records:
-        # The applied log's canonical filename was the file's name AT APPLY
-        # time. After apply, the file may have been renamed by comictagger -r.
-        # Walk the destination_folder to find the .cbz that actually exists
-        # rather than trusting the applied log's filename verbatim.
+        # Files are located by (source, issue_id) read from each CBZ's
+        # ComicInfo.xml — the applied log's `filename` is the original
+        # humble-cli-derived name, but comictagger renamed it on apply, so
+        # name-matching breaks in multi-file folders. The id pair is stable
+        # and recorded both in the applied log and in the on-disk metadata.
         dest_folder = Path(rec["destination_folder"])
-        candidate = _find_file_in_folder(dest_folder, rec["filename"])
+        source = rec.get("metadata_source") or "comicvine"
+        try:
+            issue_id = int(rec["issue_id"])
+        except (KeyError, TypeError, ValueError):
+            print(
+                f"  MISS {rec.get('filename')} applied entry has no usable issue_id",
+                file=sys.stderr,
+            )
+            missing.append(rec)
+            continue
+        candidate = _find_file_by_id(dest_folder, source, issue_id)
         if candidate is None:
             print(
-                f"  MISS {rec['filename']} not found under {dest_folder}",
+                f"  MISS ({source}, {issue_id}) not found under {dest_folder}",
                 file=sys.stderr,
             )
             missing.append(rec)
@@ -322,22 +339,27 @@ def main(argv: list[str] | None = None) -> int:
 # ---- helpers -----------------------------------------------------------
 
 
-def _find_file_in_folder(folder: Path, hint: str) -> Path | None:
-    """Locate a CBZ in `folder`. Prefers exact-name match against the hint;
-    falls back to the only .cbz when the folder contains exactly one."""
+def _find_file_by_id(folder: Path, source: str, issue_id: int) -> Path | None:
+    """Locate a CBZ in `folder` whose ComicInfo.xml records (source, issue_id).
+
+    Reuses `replan._extract_source_and_id` so the lookup logic stays
+    consistent across replan + reprocess (both ultimately walk the library
+    looking for files by their CV/MB id). Returns None if no file matches —
+    that's a real anomaly (applied log out of sync with disk) and the
+    caller should surface it explicitly rather than guess.
+    """
     if not folder.is_dir():
         return None
-    exact = folder / hint
-    if exact.is_file():
-        return exact
-    candidates = sorted(folder.glob("*.cbz"))
-    if len(candidates) == 1:
-        return candidates[0]
-    # Multiple candidates and no exact match — try a substring fallback.
-    base = Path(hint).stem.lower()
-    for c in candidates:
-        if base in c.stem.lower() or c.stem.lower() in base:
-            return c
+    for cbz in sorted(folder.glob("*.cbz")):
+        try:
+            with zipfile.ZipFile(cbz, "r") as z:
+                if "ComicInfo.xml" not in z.namelist():
+                    continue
+                xml = z.read("ComicInfo.xml").decode("utf-8")
+        except (zipfile.BadZipFile, OSError):
+            continue
+        if _extract_source_and_id(xml) == (source, issue_id):
+            return cbz
     return None
 
 

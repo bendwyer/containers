@@ -58,7 +58,7 @@ from kavita_client import KavitaClient
 from mangabaka_client import MangaBakaClient
 
 
-_VERSION = "0.3.1"
+_VERSION = "0.3.2"
 
 
 # Per-lane file output conventions. The planner produces canonical
