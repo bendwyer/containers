@@ -118,14 +118,33 @@ id you're recording: "comicvine" or "mangabaka". For MangaBaka, use the \
 series id as BOTH volume_id and issue_id (MangaBaka has no separate \
 per-issue records).
 
-8. You may call tools (search_comicvine, get_comicvine_issue, \
+8. ComicVine id discipline. ComicVine has separate id spaces for volumes \
+and issues — values do not overlap and the URL prefixes differ (`4050-` \
+vs `4000-`). A `search_comicvine` result is a *volume* (a series, ongoing \
+run, or TPB collection), not an issue. The `issue_id` you record MUST be \
+the id of an *issue* belonging to that volume — never the volume's own id. \
+For ComicVine matches, `issue_id` and `volume_id` must always differ. \
+\
+Workflow: pick the right volume from search results, then call \
+`get_comicvine_issues_for_volume(volume_id)` to retrieve its issues, then \
+pick the specific issue. For TPBs (single-issue collection volumes), the \
+volume typically contains exactly one issue — fetch it and use its id. \
+For multi-issue volumes (ongoing runs, multi-trade collections), pick the \
+issue whose `issue_number` matches the filename (or whose cover/title \
+disambiguates). Pre-supplied candidates may already include an issues \
+list; use that without re-fetching when present. \
+\
+This does not apply to MangaBaka — there, series id IS issue_id IS \
+volume_id by design (rule 7).
+
+9. You may call tools (search_comicvine, get_comicvine_issue, \
 get_comicvine_issues_for_volume, search_mangabaka, get_mangabaka_series, \
 search_kavita_series, get_kavita_series_metadata) to gather more info. Use \
 them when provided information is insufficient, not speculatively. ComicVine \
 has a 200/hr rate limit shared across this run; MangaBaka allows 60/min. \
 Every call counts.
 
-9. End your turn by calling `record_decision` with your final answer. \
+10. End your turn by calling `record_decision` with your final answer. \
 Do not produce trailing prose. Only pick an issue_id that appears in a \
 candidate list or a tool response — never invent one.
 """
@@ -135,9 +154,12 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "search_comicvine",
         "description": (
-            "Search ComicVine for volumes matching a series name. "
+            "Search ComicVine for VOLUMES matching a series name. "
             "Returns a list of volumes with id, name, start_year, publisher, "
             "count_of_issues, description_html, image_url. "
+            "These ids are VOLUME ids — you cannot record them as issue_id. "
+            "Use get_comicvine_issues_for_volume to convert a chosen volume "
+            "to its issue id(s). "
             "Optional year_min/year_max filter candidates by start_year."
         ),
         "input_schema": {
@@ -250,8 +272,22 @@ TOOLS: list[dict[str, Any]] = [
                         "Defaults to 'comicvine' if omitted."
                     ),
                 },
-                "issue_id": {"type": "integer"},
-                "volume_id": {"type": "integer"},
+                "issue_id": {
+                    "type": "integer",
+                    "description": (
+                        "ComicVine: id of a specific issue inside the volume "
+                        "(from get_comicvine_issues_for_volume). MUST differ "
+                        "from volume_id. MangaBaka: same as volume_id (the "
+                        "series id)."
+                    ),
+                },
+                "volume_id": {
+                    "type": "integer",
+                    "description": (
+                        "ComicVine: id of the volume (from search_comicvine). "
+                        "MangaBaka: the series id."
+                    ),
+                },
                 "confidence": {"type": "string", "enum": ["high", "medium"]},
                 "reasoning": {"type": "string"},
                 "signals_used": {
