@@ -25,6 +25,8 @@ from typing import Any
 REQUIRED_FIELDS = {"filename", "decision", "reasoning"}
 VALID_DECISIONS = {"match", "uncertain"}
 VALID_CONFIDENCE = {"high", "medium"}
+VALID_SOURCES = {"comicvine", "mangabaka"}
+DEFAULT_SOURCE = "comicvine"
 
 
 class DecisionSchemaError(ValueError):
@@ -76,8 +78,17 @@ def _validate_and_normalize(decision: dict[str, Any], source_id: str) -> dict[st
             raise DecisionSchemaError(
                 f"confidence must be one of {VALID_CONFIDENCE}, got {confidence!r}"
             )
+        source = decision.get("source") or DEFAULT_SOURCE
+        if source not in VALID_SOURCES:
+            raise DecisionSchemaError(
+                f"source must be one of {VALID_SOURCES}, got {source!r}"
+            )
     # Copy + stamp. Never mutate the caller's dict.
     record = dict(decision)
+    if record.get("decision") == "match":
+        # Default source for backward compat: pre-MangaBaka logs lack the
+        # field, treat them as ComicVine matches.
+        record.setdefault("source", DEFAULT_SOURCE)
     record["source_id"] = source_id
     record["when"] = datetime.now(timezone.utc).isoformat()
     return record

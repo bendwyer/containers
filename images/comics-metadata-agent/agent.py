@@ -49,10 +49,11 @@ from agent_runner import AgentRunner
 from comicvine_client import ComicVineClient
 from decision_log import DecisionLog
 from kavita_client import KavitaClient
+from mangabaka_client import MangaBakaClient
 from series_grouper import group_by_series
 
 
-_VERSION = "0.1.8"
+_VERSION = "0.3.0"
 # Required to unlock OAuth authentication on /v1/messages. Without it,
 # Anthropic returns 401 "OAuth authentication is currently not supported"
 # even though the token itself is valid.
@@ -104,6 +105,10 @@ def main(argv: list[str] | None = None) -> int:
         user_agent=f"comics-metadata-agent/{_VERSION}",
         session=session,
     )
+    mangabaka = MangaBakaClient(
+        user_agent=f"comics-metadata-agent/{_VERSION}",
+        session=session,
+    )
     claude = _make_claude_client(anthropic_cred)
     decision_log = DecisionLog(args.decision_log_dir, source_id=source_id)
 
@@ -111,8 +116,10 @@ def main(argv: list[str] | None = None) -> int:
         claude_client=claude,
         kavita=kavita,
         comicvine=comicvine,
+        mangabaka=mangabaka,
         decision_log=decision_log,
         model=args.model,
+        lane=args.lane,
         max_tool_rounds=args.max_tool_rounds,
         oauth_mode=_detect_auth_mode(anthropic_cred) == "oauth",
     )
@@ -136,6 +143,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"\nTotals: {total_matches} match, {total_uncertain} uncertain")
     print(f"ComicVine API calls: {comicvine.call_count}")
+    print(f"MangaBaka API calls: {mangabaka.call_count}")
     return 0
 
 
@@ -173,6 +181,10 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     p.add_argument("--unmatched-dir", required=True, type=Path,
                    help="Directory containing .cbz files awaiting triage.")
+    p.add_argument("--lane", choices=["comics", "manga"], default="comics",
+                   help="Which lane these items will land in. Drives source "
+                        "preference: lane=manga prefers MangaBaka with CV "
+                        "fallback; lane=comics uses CV.")
     p.add_argument("--source-context", required=True, type=Path,
                    help="Path to a JSON file with source_id + source_title.")
     p.add_argument("--decision-log-dir", required=True, type=Path,

@@ -49,9 +49,10 @@ import requests
 from bundle_planner import ItemPlan, plan_bundle
 from comicvine_client import ComicVineClient
 from kavita_client import KavitaClient
+from mangabaka_client import MangaBakaClient
 
 
-_VERSION = "0.1.7"
+_VERSION = "0.3.0"
 
 
 # Per-lane file output conventions. The planner produces canonical
@@ -82,15 +83,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
 
-    try:
-        lane = _derive_lane(args.unmatched_dir)
-    except ValueError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+    lane = args.lane
+    if lane not in LANE_CONFIG:
+        print(
+            f"ERROR: --lane must be one of {sorted(LANE_CONFIG)}; got {lane!r}",
+            file=sys.stderr,
+        )
         return 2
 
-    library_root = _derive_library_root(args.unmatched_dir)
+    library_root = args.library_root or Path(f"/books/library/{lane}")
     config = LANE_CONFIG[lane]
     print(f"Lane: {lane}")
+    print(f"Source dir: {args.unmatched_dir}")
     print(f"Library root: {library_root}")
     print(f"Filename template: {config['filename_template']}")
 
@@ -114,7 +118,8 @@ def main(argv: list[str] | None = None) -> int:
     cv = ComicVineClient(
         comicvine_key, user_agent=f"comics-metadata-agent-apply/{_VERSION}"
     )
-    plans = plan_bundle(eligible, cv)
+    mb = MangaBakaClient(user_agent=f"comics-metadata-agent-apply/{_VERSION}")
+    plans = plan_bundle(eligible, cv, mb)
 
     applied_set = {r["filename"] for r in _read_jsonl(applied_log)}
     todo = [p for p in plans if p.filename not in applied_set]
@@ -163,37 +168,6 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {fn}: {why}", file=sys.stderr)
         return 1
     return 0
-
-
-# ---- lane derivation ----------------------------------------------------
-
-
-def _derive_lane(unmatched_dir: Path) -> str:
-    parts = list(unmatched_dir.parts)
-    try:
-        i = parts.index("incoming")
-    except ValueError as e:
-        raise ValueError(
-            f"--unmatched-dir must contain 'incoming' segment: {unmatched_dir}"
-        ) from e
-    if i + 2 >= len(parts) or parts[i + 2] != "_unmatched":
-        raise ValueError(
-            f"--unmatched-dir must match /.../incoming/<lane>/_unmatched: {unmatched_dir}"
-        )
-    lane = parts[i + 1]
-    if lane not in LANE_CONFIG:
-        raise ValueError(
-            f"unsupported lane {lane!r}; expected one of {sorted(LANE_CONFIG)}"
-        )
-    return lane
-
-
-def _derive_library_root(unmatched_dir: Path) -> Path:
-    parts = list(unmatched_dir.parts)
-    i = parts.index("incoming")
-    lane = parts[i + 1]
-    base = Path(*parts[:i])
-    return base / "library" / lane
 
 
 # ---- destination resolution --------------------------------------------
@@ -254,11 +228,27 @@ def _apply_one(
     filename_template: str,
     cv_key: str,
 ) -> None:
-    """1) comictagger save → 2) python override ComicInfo.xml → 3) move."""
+    """1) comictagger save → 2) python override ComicInfo.xml → 3) move.
+
+    The save step uses the plan's source (`comicvine` or `mangabaka`) so
+    comictagger fetches metadata from the right talker. ComicVine matches
+    use --comicvine-key + --cv-use-series-start-as-volume; MangaBaka uses
+    --mangabaka-use-series-start-as-volume + a per-source filter knob.
+    """
     dest_folder.mkdir(parents=True, exist_ok=True)
 
-    write = subprocess.run(
-        [
+    if plan.source == "mangabaka":
+        save_args = [
+            "comictagger", "--no-gui", "-s", "-o", "-f",
+            "--id", str(plan.issue_id),
+            "--tags-write", "cr",
+            "--source", "mangabaka",
+            "--mangabaka-age-filter", "pornographic",
+            "--mangabaka-use-series-start-as-volume",
+            str(src),
+        ]
+    else:
+        save_args = [
             "comictagger", "--no-gui", "-s", "-o", "-f",
             "--id", str(plan.issue_id),
             "--tags-write", "cr",
@@ -266,14 +256,11 @@ def _apply_one(
             "--comicvine-key", cv_key,
             "--cv-use-series-start-as-volume",
             str(src),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+        ]
+    write = subprocess.run(save_args, check=False, capture_output=True, text=True)
     if write.returncode != 0:
         raise RuntimeError(
-            f"comictagger save failed (rc={write.returncode}): "
+            f"comictagger save failed (source={plan.source}, rc={write.returncode}): "
             f"{(write.stderr or write.stdout).strip()[:500]}"
         )
 
@@ -360,6 +347,7 @@ def _append_applied(
         "volume": plan.volume,
         "number": plan.number,
         "title": plan.title,
+        "metadata_source": plan.source,
         "destination_folder": str(dest_folder),
         "source_id": source_id,
         "applied_at": datetime.now(timezone.utc).isoformat(),
@@ -408,9 +396,16 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--source-id", required=True)
+    p.add_argument("--lane", required=True, choices=sorted(LANE_CONFIG),
+                   help="Library lane the items belong in. Determines filename "
+                        "template and folder convention.")
     p.add_argument("--unmatched-dir", required=True, type=Path,
-                   help="Path like /books/incoming/<lane>/_unmatched. "
-                        "Lane and library root are derived from this.")
+                   help="Directory containing the .cbz files awaiting apply. "
+                        "Workflow context: /scratch/incoming/<lane>. Oneshot "
+                        "context: /books/incoming/<lane>/_unmatched.")
+    p.add_argument("--library-root", type=Path, default=None,
+                   help="Where canonical files land. Defaults to "
+                        "/books/library/<lane>.")
     p.add_argument("--decision-log-dir", required=True, type=Path)
     p.add_argument("--kavita-url",
                    default="http://kavita.books.svc.cluster.local:5000")

@@ -23,6 +23,7 @@ from cover_extractor import extract_pages_as_anthropic_images
 from decision_log import DecisionLog
 from filename_parser import parse_filename
 from kavita_client import KavitaClient
+from mangabaka_client import MangaBakaClient, MangaBakaRateLimitError
 from prompt import OAUTH_SYSTEM_MESSAGE, SYSTEM_PROMPT, TOOLS, build_user_text
 
 
@@ -39,16 +40,20 @@ class AgentRunner:
         claude_client,
         kavita: KavitaClient,
         comicvine: ComicVineClient,
+        mangabaka: MangaBakaClient,
         decision_log: DecisionLog,
         model: str,
+        lane: str = "comics",
         max_tool_rounds: int = 8,
         oauth_mode: bool = False,
     ):
         self.claude = claude_client
         self.kavita = kavita
         self.comicvine = comicvine
+        self.mangabaka = mangabaka
         self.decision_log = decision_log
         self.model = model
+        self.lane = lane
         self.max_tool_rounds = max_tool_rounds
         # OAuth tokens require a fixed system message + the real prompt
         # injected into the first user message. See prompt.py.
@@ -90,15 +95,23 @@ class AgentRunner:
             parsed["raw_title"],
             source_context.get("inferred_year_range"),
         )
+        # MangaBaka pre-fetch only for manga lane to avoid burning API calls
+        # on comics-lane items that will never use it.
+        mb_candidates = (
+            self._safe_search_mangabaka(parsed["raw_title"])
+            if self.lane == "manga" else None
+        )
         cover_images = self._safe_extract_covers(cbz_path)
 
         item_context = {
+            "lane": self.lane,
             "filename": cbz_path.name,
             "parsed_from_filename": parsed,
             "source_context": source_context,
             "sibling_items_resolved": siblings_resolved,
             "existing_kavita_series": kavita_matches,
             "candidates": cv_candidates,
+            "mangabaka_candidates": mb_candidates,
         }
 
         decision = self._run_tool_use_loop(item_context, cover_images)
@@ -131,6 +144,14 @@ class AgentRunner:
             return {"_error": f"comicvine rate limit: {e}"}
         except Exception as e:
             return {"_error": f"comicvine search failed: {e}"}
+
+    def _safe_search_mangabaka(self, name: str) -> Any:
+        try:
+            return self.mangabaka.search_series(name)
+        except MangaBakaRateLimitError as e:
+            return {"_error": f"mangabaka rate limit: {e}"}
+        except Exception as e:
+            return {"_error": f"mangabaka search failed: {e}"}
 
     def _safe_extract_covers(self, cbz_path: Path) -> list[dict]:
         try:
@@ -198,6 +219,8 @@ class AgentRunner:
                     result = self._dispatch_tool(tu.name, dict(tu.input))
                 except ComicVineRateLimitError as e:
                     result = {"_error": f"comicvine rate limit: {e}"}
+                except MangaBakaRateLimitError as e:
+                    result = {"_error": f"mangabaka rate limit: {e}"}
                 except Exception as e:
                     result = {"_error": f"{type(e).__name__}: {e}"}
                 tool_results.append({
@@ -225,6 +248,10 @@ class AgentRunner:
             return self.comicvine.get_issue(args["issue_id"])
         if name == "get_comicvine_issues_for_volume":
             return self.comicvine.get_issues_for_volume(args["volume_id"])
+        if name == "search_mangabaka":
+            return self.mangabaka.search_series(args["title"])
+        if name == "get_mangabaka_series":
+            return self.mangabaka.get_series(args["series_id"])
         if name == "search_kavita_series":
             return self.kavita.search_series(args["query"])
         if name == "get_kavita_series_metadata":

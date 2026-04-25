@@ -22,10 +22,9 @@ from apply import (
     LANE_CONFIG,
     YEAR_TOLERANCE,
     _append_applied,
-    _derive_lane,
-    _derive_library_root,
     _norm_name,
     _override_comicinfo,
+    _parse_args,
     _read_jsonl,
     _safe_folder,
     _set_field,
@@ -34,28 +33,43 @@ from apply import (
 from bundle_planner import ItemPlan
 
 
-class LaneDerivationTests(unittest.TestCase):
-    def test_comics_lane(self):
-        p = Path("/books/incoming/comics/_unmatched")
-        self.assertEqual(_derive_lane(p), "comics")
-        self.assertEqual(_derive_library_root(p), Path("/books/library/comics"))
+class CliArgsTests(unittest.TestCase):
+    def _parse(self, *extra):
+        argv = [
+            "--source-id", "X",
+            "--lane", "comics",
+            "--unmatched-dir", "/scratch/incoming/comics",
+            "--decision-log-dir", "/books/library/.agent-decisions/comics",
+            "--kavita-api-key-file", "/secret/kavita/credential",
+            "--comicvine-api-key-file", "/secret/comicvine/credential",
+            *extra,
+        ]
+        return _parse_args(argv)
 
-    def test_manga_lane(self):
-        p = Path("/books/incoming/manga/_unmatched")
-        self.assertEqual(_derive_lane(p), "manga")
-        self.assertEqual(_derive_library_root(p), Path("/books/library/manga"))
+    def test_default_library_root_derives_from_lane(self):
+        # When --library-root not provided, main() defaults to
+        # /books/library/<lane>. Argparse sets it to None by default.
+        args = self._parse()
+        self.assertIsNone(args.library_root)
+        self.assertEqual(args.lane, "comics")
 
-    def test_unknown_lane_rejected(self):
-        with self.assertRaises(ValueError):
-            _derive_lane(Path("/books/incoming/ebook/_unmatched"))
+    def test_explicit_library_root_overrides_default(self):
+        args = self._parse("--library-root", "/custom/path")
+        self.assertEqual(args.library_root, Path("/custom/path"))
 
-    def test_missing_unmatched_segment_rejected(self):
-        with self.assertRaises(ValueError):
-            _derive_lane(Path("/books/incoming/comics/something-else"))
+    def test_lane_required(self):
+        with self.assertRaises(SystemExit):
+            _parse_args([
+                "--source-id", "X",
+                "--unmatched-dir", "/x",
+                "--decision-log-dir", "/y",
+                "--kavita-api-key-file", "/k",
+                "--comicvine-api-key-file", "/c",
+            ])
 
-    def test_missing_incoming_segment_rejected(self):
-        with self.assertRaises(ValueError):
-            _derive_lane(Path("/random/path/_unmatched"))
+    def test_lane_must_be_supported(self):
+        with self.assertRaises(SystemExit):
+            self._parse("--lane", "ebook")  # not in LANE_CONFIG
 
     def test_lane_keys_have_configs(self):
         for lane in ("comics", "manga"):
