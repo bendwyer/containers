@@ -53,7 +53,7 @@ from mangabaka_client import MangaBakaClient
 from series_grouper import group_by_series
 
 
-_VERSION = "0.3.1"
+_VERSION = "0.3.2"
 # Required to unlock OAuth authentication on /v1/messages. Without it,
 # Anthropic returns 401 "OAuth authentication is currently not supported"
 # even though the token itself is valid.

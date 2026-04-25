@@ -8,7 +8,6 @@ Run: python -m unittest test_reprocess -v
 
 from __future__ import annotations
 
-import json
 import tempfile
 import unittest
 import zipfile
@@ -16,56 +15,97 @@ from pathlib import Path
 
 from reprocess import (
     _LANE_LIBRARY_ROOT,
-    _find_file_in_folder,
+    _find_file_by_id,
     _read_jsonl,
 )
 
 
-class FindFileInFolderTests(unittest.TestCase):
-    def _touch_cbz(self, path: Path) -> Path:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(path, "w") as z:
-            z.writestr("ComicInfo.xml", "<ComicInfo/>")
-        return path
+def make_cbz(path: Path, web_url: str | None = None, notes: str | None = None) -> Path:
+    """Create a minimal CBZ at `path` with optional <Web> and <Notes> fields."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    parts = ["<ComicInfo>"]
+    if web_url:
+        parts.append(f"<Web>{web_url}</Web>")
+    if notes:
+        parts.append(f"<Notes>{notes}</Notes>")
+    parts.append("</ComicInfo>")
+    xml = "".join(parts)
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("ComicInfo.xml", xml)
+    return path
 
+
+class FindFileByIdTests(unittest.TestCase):
     def test_returns_none_when_folder_missing(self):
-        self.assertIsNone(_find_file_in_folder(Path("/nonexistent"), "x.cbz"))
+        self.assertIsNone(
+            _find_file_by_id(Path("/nonexistent"), "comicvine", 1)
+        )
 
-    def test_exact_name_match(self):
+    def test_returns_none_when_folder_empty(self):
         with tempfile.TemporaryDirectory() as td:
-            f = self._touch_cbz(Path(td) / "Foo (2020) #001.cbz")
-            self._touch_cbz(Path(td) / "Other (2020) #001.cbz")
-            got = _find_file_in_folder(Path(td), "Foo (2020) #001.cbz")
-            self.assertEqual(got, f)
-
-    def test_falls_back_to_single_cbz(self):
-        with tempfile.TemporaryDirectory() as td:
-            f = self._touch_cbz(Path(td) / "Renamed Canonical.cbz")
-            # Hint doesn't match, but only one cbz in folder.
-            got = _find_file_in_folder(Path(td), "Original.cbz")
-            self.assertEqual(got, f)
-
-    def test_substring_fallback_when_hint_overlaps_canonical(self):
-        with tempfile.TemporaryDirectory() as td:
-            target = self._touch_cbz(Path(td) / "The Long Series Title (2022) #001.cbz")
-            self._touch_cbz(Path(td) / "Other Title (2020) #001.cbz")
-            # Hint stem 'the long series title (2022) #001' is substring of
-            # the target's stem; substring fallback finds it.
-            got = _find_file_in_folder(
-                Path(td), "The Long Series Title (2022) #001.cbz"
+            self.assertIsNone(
+                _find_file_by_id(Path(td), "comicvine", 1)
             )
+
+    def test_finds_matching_cv_file_in_multi_file_folder(self):
+        # Reproduces the original Massive-Verse failure: 7 CBZs in one
+        # folder, all valid Series, only one with the requested issue_id.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for n in range(1, 8):
+                make_cbz(
+                    root / f"Radiant Black (2021) #{n:03d}.cbz",
+                    web_url=f"https://comicvine.gamespot.com/r/4000-{880000 + n}/",
+                )
+            target = make_cbz(
+                root / "Radiant Black (2021) #003.cbz",
+                web_url="https://comicvine.gamespot.com/r/4000-972584/",
+            )
+            got = _find_file_by_id(root, "comicvine", 972584)
             self.assertEqual(got, target)
 
-    def test_multiple_candidates_no_match_returns_none(self):
+    def test_distinguishes_by_source(self):
+        # Same numeric id under different sources resolves to different files.
         with tempfile.TemporaryDirectory() as td:
-            self._touch_cbz(Path(td) / "Foo (2020) #001.cbz")
-            self._touch_cbz(Path(td) / "Bar (2020) #001.cbz")
-            got = _find_file_in_folder(Path(td), "Baz unrelated.cbz")
-            self.assertIsNone(got)
+            root = Path(td)
+            cv_file = make_cbz(
+                root / "cv.cbz",
+                web_url="https://comicvine.gamespot.com/r/4000-42/",
+            )
+            mb_file = make_cbz(
+                root / "mb.cbz",
+                web_url="https://mangabaka.dev/series/42",
+            )
+            self.assertEqual(_find_file_by_id(root, "comicvine", 42), cv_file)
+            self.assertEqual(_find_file_by_id(root, "mangabaka", 42), mb_file)
 
-    def test_empty_folder_returns_none(self):
+    def test_falls_back_to_notes_when_web_absent(self):
         with tempfile.TemporaryDirectory() as td:
-            self.assertIsNone(_find_file_in_folder(Path(td), "x.cbz"))
+            root = Path(td)
+            target = make_cbz(
+                root / "x.cbz",
+                notes="Tagged with ComicTagger using info from Comic Vine. [Issue ID 12345]",
+            )
+            self.assertEqual(_find_file_by_id(root, "comicvine", 12345), target)
+
+    def test_returns_none_when_no_file_matches(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            make_cbz(root / "a.cbz", web_url="https://comicvine.gamespot.com/r/4000-1/")
+            make_cbz(root / "b.cbz", web_url="https://comicvine.gamespot.com/r/4000-2/")
+            self.assertIsNone(_find_file_by_id(root, "comicvine", 999))
+
+    def test_skips_files_without_comicinfo(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            bad = root / "bad.cbz"
+            with zipfile.ZipFile(bad, "w") as z:
+                z.writestr("page1.jpg", b"x")
+            target = make_cbz(
+                root / "good.cbz",
+                web_url="https://comicvine.gamespot.com/r/4000-7/",
+            )
+            self.assertEqual(_find_file_by_id(root, "comicvine", 7), target)
 
 
 class ReadJsonlTests(unittest.TestCase):
