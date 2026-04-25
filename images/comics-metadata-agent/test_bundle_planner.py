@@ -14,13 +14,17 @@ from unittest.mock import MagicMock
 
 from bundle_planner import (
     SIBLING_YEAR_TOLERANCE,
+    _apply_volume_width,
     _canonical_series_name,
     _canonical_volume_year,
     _coarse_key,
+    _detect_dominant_volume_width,
     _extract_subtitle,
     _issue_year,
+    _normalize_casing,
     _resolve_title,
     _split_by_year_distance,
+    _strip_series_redundancy,
     plan_bundle,
 )
 
@@ -424,6 +428,124 @@ class EndToEndPlanTests(unittest.TestCase):
         self.assertEqual(igr.series, "Inferno Girl Red")
         self.assertEqual(igr.volume, 2023)
         self.assertEqual(igr.title, "Book One")
+
+
+class VolumeWidthNormalizationTests(unittest.TestCase):
+    def test_dominant_width_single_digit(self):
+        titles = ["Volume 1", "Volume 2", "Volume 3", "Volume 4", "Volume 007"]
+        self.assertEqual(_detect_dominant_volume_width(titles), 1)
+
+    def test_dominant_width_two_digit(self):
+        titles = ["Volume 01: A", "Volume 02: B", "Volume 5: C"]
+        self.assertEqual(_detect_dominant_volume_width(titles), 2)
+
+    def test_no_volume_titles_returns_none(self):
+        titles = ["Book One", "TPB", "One-Shot 2022"]
+        self.assertIsNone(_detect_dominant_volume_width(titles))
+
+    def test_apply_pads_short_to_width(self):
+        self.assertEqual(_apply_volume_width("Volume 7", 2), "Volume 07")
+
+    def test_apply_strips_long_to_width(self):
+        self.assertEqual(_apply_volume_width("Volume 007: Foo", 1), "Volume 7: Foo")
+
+    def test_apply_preserves_subtitle(self):
+        self.assertEqual(
+            _apply_volume_width("Volume 7: All-New All-Different", 1),
+            "Volume 7: All-New All-Different",
+        )
+
+    def test_apply_handles_case_insensitive(self):
+        self.assertEqual(_apply_volume_width("VOLUME 007", 1), "Volume 7")
+        self.assertEqual(_apply_volume_width("volume 7", 2), "Volume 07")
+
+    def test_apply_no_match_returns_unchanged(self):
+        self.assertEqual(_apply_volume_width("Book One", 1), "Book One")
+        self.assertEqual(_apply_volume_width("", 1), "")
+
+    def test_radiant_black_outlier_normalized_in_full_plan(self):
+        """End-to-end: a series with 6×width-1 + 1×width-3 should normalize
+        the outlier to width-1, matching what the user wants for RB Vol 7."""
+        decisions = [
+            make_decision(f"RB Vol{n}.cbz", 138352, 880000 + n) for n in range(1, 8)
+        ]
+        volumes = {138352: make_volume(138352, "Radiant Black", 2021, count=7)}
+        # 1-6 are "Volume N" (width 1); 7 is "Volume 007" (width 3) — CV's quirk.
+        issues = {
+            **{
+                880000 + n: make_issue(880000 + n, n, f"Volume {n}: Story {n}")
+                for n in range(1, 7)
+            },
+            880007: make_issue(880007, 7, "Volume 007: All-New All-Different"),
+        }
+        cv = make_cv_client(volumes, issues)
+        plans = plan_bundle(decisions, cv)
+        by_n = {p.number: p for p in plans}
+        self.assertEqual(by_n[1].title, "Volume 1: Story 1")
+        self.assertEqual(by_n[6].title, "Volume 6: Story 6")
+        # The outlier — pulled in line.
+        self.assertEqual(by_n[7].title, "Volume 7: All-New All-Different")
+
+
+class SeriesRedundancyTests(unittest.TestCase):
+    def test_exact_match_drops_title(self):
+        self.assertEqual(_strip_series_redundancy("Foo", "Foo"), "")
+
+    def test_case_insensitive_exact_match(self):
+        self.assertEqual(_strip_series_redundancy("FOO", "foo"), "")
+
+    def test_strips_series_colon_prefix(self):
+        self.assertEqual(
+            _strip_series_redundancy("Foo: Bar", "Foo"),
+            "Bar",
+        )
+
+    def test_strips_case_insensitively(self):
+        self.assertEqual(
+            _strip_series_redundancy("FOO: Bar", "foo"),
+            "Bar",
+        )
+
+    def test_does_not_strip_bare_prefix(self):
+        # 'Foo returns home' starts with 'Foo' but isn't 'Foo:' — leave alone.
+        self.assertEqual(
+            _strip_series_redundancy("Foo returns home", "Foo"),
+            "Foo returns home",
+        )
+
+    def test_unrelated_title_passes_through(self):
+        self.assertEqual(
+            _strip_series_redundancy("Volume 1: Subtitle", "Foo"),
+            "Volume 1: Subtitle",
+        )
+
+    def test_empty_inputs_pass_through(self):
+        self.assertEqual(_strip_series_redundancy("", "Foo"), "")
+        self.assertEqual(_strip_series_redundancy("Bar", ""), "Bar")
+
+
+class CasingNormalizationTests(unittest.TestCase):
+    def test_uppercase_long_string_title_cased(self):
+        self.assertEqual(
+            _normalize_casing("ALL-NEW ALL-DIFFERENT"),
+            "All-New All-Different",
+        )
+
+    def test_short_uppercase_left_alone(self):
+        # Likely an acronym like 'TPB' or 'OGN'.
+        self.assertEqual(_normalize_casing("TPB"), "TPB")
+        self.assertEqual(_normalize_casing("OGN"), "OGN")
+        self.assertEqual(_normalize_casing("FBI"), "FBI")
+
+    def test_mixed_case_left_alone(self):
+        self.assertEqual(_normalize_casing("Volume 1: Subtitle"), "Volume 1: Subtitle")
+
+    def test_pure_digits_or_punctuation_pass_through(self):
+        self.assertEqual(_normalize_casing("12345"), "12345")
+        self.assertEqual(_normalize_casing("---"), "---")
+
+    def test_empty_string(self):
+        self.assertEqual(_normalize_casing(""), "")
 
 
 class IgnoresUncertainTests(unittest.TestCase):
