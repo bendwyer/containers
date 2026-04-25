@@ -52,7 +52,7 @@ from kavita_client import KavitaClient
 from series_grouper import group_by_series
 
 
-_VERSION = "0.1.5"
+_VERSION = "0.1.6"
 # Required to unlock OAuth authentication on /v1/messages. Without it,
 # Anthropic returns 401 "OAuth authentication is currently not supported"
 # even though the token itself is valid.
