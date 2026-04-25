@@ -4,6 +4,11 @@
 Reads <decision-log-dir>/<source_id>.jsonl, plans canonical metadata across
 the whole bundle (see bundle_planner.py), then for each item:
 
+The --staging-dir argument is the directory containing the .cbz files to
+apply. Workflow context: /scratch/incoming/<lane>. Oneshot/_unmatched
+context: /books/incoming/<lane>/_unmatched. Reprocess context:
+/books/library/.reprocess/<source_id>.
+
   1. comictagger -s --id <issue_id> --cv-use-series-start-as-volume on the
      source file to write CV-derived ComicInfo.xml.
   2. Python ComicInfo.xml override: rewrite Series/Volume/Number/Title to
@@ -14,13 +19,14 @@ the whole bundle (see bundle_planner.py), then for each item:
   4. comictagger -r --tags-read cr --move into the destination folder.
   5. Append <source_id>.applied.jsonl checkpoint for idempotent re-runs.
 
-Lane (comics vs manga) and library root are derived from --unmatched-dir.
+Lane and library root come from --lane and (optional) --library-root.
 
 Usage:
     apply.py \\
         --source-id S4NqZxAkmRkKZmEt \\
-        --unmatched-dir /books/incoming/comics/_unmatched \\
-        --decision-log-dir /books/library/.agent-decisions \\
+        --lane comics \\
+        --staging-dir /books/incoming/comics/_unmatched \\
+        --decision-log-dir /books/library/.agent-decisions/comics \\
         --kavita-url http://kavita.books.svc.cluster.local:5000 \\
         --kavita-api-key-file /secret/kavita/credential \\
         --comicvine-api-key-file /secret/comicvine/credential
@@ -52,7 +58,7 @@ from kavita_client import KavitaClient
 from mangabaka_client import MangaBakaClient
 
 
-_VERSION = "0.3.0"
+_VERSION = "0.3.1"
 
 
 # Per-lane file output conventions. The planner produces canonical
@@ -94,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     library_root = args.library_root or Path(f"/books/library/{lane}")
     config = LANE_CONFIG[lane]
     print(f"Lane: {lane}")
-    print(f"Source dir: {args.unmatched_dir}")
+    print(f"Source dir: {args.staging_dir}")
     print(f"Library root: {library_root}")
     print(f"Filename template: {config['filename_template']}")
 
@@ -141,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
     applied_count = 0
     failed: list[tuple[str, str]] = []
     for plan in todo:
-        src = args.unmatched_dir / plan.filename
+        src = args.staging_dir / plan.filename
         if not src.exists():
             print(f"FAIL {plan.filename}: source file missing", file=sys.stderr)
             failed.append((plan.filename, "source-missing"))
@@ -399,10 +405,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--lane", required=True, choices=sorted(LANE_CONFIG),
                    help="Library lane the items belong in. Determines filename "
                         "template and folder convention.")
-    p.add_argument("--unmatched-dir", required=True, type=Path,
+    p.add_argument("--staging-dir", required=True, type=Path,
                    help="Directory containing the .cbz files awaiting apply. "
                         "Workflow context: /scratch/incoming/<lane>. Oneshot "
-                        "context: /books/incoming/<lane>/_unmatched.")
+                        "context: /books/incoming/<lane>/_unmatched. Reprocess "
+                        "context: /books/library/.reprocess/<source_id>.")
     p.add_argument("--library-root", type=Path, default=None,
                    help="Where canonical files land. Defaults to "
                         "/books/library/<lane>.")

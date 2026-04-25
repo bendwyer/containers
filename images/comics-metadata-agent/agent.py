@@ -7,7 +7,7 @@ via comictagger.
 
 Usage:
     agent.py \\
-        --unmatched-dir /books/incoming/comics/_unmatched \\
+        --staging-dir /books/incoming/comics/_unmatched \\
         --source-context /config/source.json \\
         --decision-log-dir /books/library/.agent-decisions \\
         --kavita-url http://kavita.books.svc.cluster.local \\
@@ -53,7 +53,7 @@ from mangabaka_client import MangaBakaClient
 from series_grouper import group_by_series
 
 
-_VERSION = "0.3.0"
+_VERSION = "0.3.1"
 # Required to unlock OAuth authentication on /v1/messages. Without it,
 # Anthropic returns 401 "OAuth authentication is currently not supported"
 # even though the token itself is valid.
@@ -85,13 +85,13 @@ def main(argv: list[str] | None = None) -> int:
         print("ERROR: source context missing source_id", file=sys.stderr)
         return 2
 
-    if not args.unmatched_dir.is_dir():
-        print(f"ERROR: unmatched-dir does not exist: {args.unmatched_dir}", file=sys.stderr)
+    if not args.staging_dir.is_dir():
+        print(f"ERROR: staging-dir does not exist: {args.staging_dir}", file=sys.stderr)
         return 2
 
-    items = sorted(args.unmatched_dir.glob("*.cbz"))
+    items = sorted(args.staging_dir.glob("*.cbz"))
     if not items:
-        print("No .cbz items in unmatched dir — nothing to do.")
+        print("No .cbz items in staging dir — nothing to do.")
         return 0
 
     session = requests.Session()
@@ -179,7 +179,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         description="Propose ComicVine matches for dead-lettered CBZ files.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("--unmatched-dir", required=True, type=Path,
+    p.add_argument("--staging-dir", required=True, type=Path,
                    help="Directory containing .cbz files awaiting triage.")
     p.add_argument("--lane", choices=["comics", "manga"], default="comics",
                    help="Which lane these items will land in. Drives source "

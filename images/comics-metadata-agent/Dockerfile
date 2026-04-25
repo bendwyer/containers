@@ -17,6 +17,6 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 COPY agent.py agent_runner.py apply.py bundle_planner.py comicvine_client.py \
      cover_extractor.py decision_log.py filename_parser.py kavita_client.py \
-     mangabaka_client.py prompt.py replan.py series_grouper.py /app/
+     mangabaka_client.py prompt.py replan.py reprocess.py series_grouper.py /app/
 ENTRYPOINT ["python", "-B", "/app/agent.py"]
 CMD ["--help"]
