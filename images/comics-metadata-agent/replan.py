@@ -58,7 +58,7 @@ from kavita_client import KavitaClient
 from mangabaka_client import MangaBakaClient
 
 
-_VERSION = "0.3.11"
+_VERSION = "0.3.12"
 
 
 # ID is embedded in <Web> (most reliable) and <Notes> (fallback). Source is
@@ -312,13 +312,20 @@ def _resolve_destination(
 
 def _canonical_filename(plan: ItemPlan, config: dict[str, Any]) -> str:
     """Render the canonical filename from the plan, mirroring comictagger's
-    template substitution. No leading folder segment."""
+    template substitution. No leading folder segment.
+
+    Both `{issue}` and `{volume}` resolve to the planner's `number` (zero-
+    padded). Comics templates use `{issue}` (from ComicInfo <Number>);
+    manga templates use `{volume}` (from ComicInfo <Volume> — manga lane
+    sets <Volume> to the volume number and removes <Number>).
+    """
     template: str = config["filename_template"]
     number_str = f"{plan.number:03d}"
     name = template.format(
         series=plan.series,
         year=plan.year if plan.year is not None else plan.volume,
         issue=number_str,
+        volume=number_str,
     )
     return _safe_folder(name) + ".cbz"
 
