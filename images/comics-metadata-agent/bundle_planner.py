@@ -215,20 +215,23 @@ def _plan_group(
     canonical_series = _canonical_series_name(group, lane=lane)
     canonical_volume = _canonical_volume_year(group)
 
-    # Stable order for number assignment: by start_year, then issue_number.
+    # Stable order for number assignment: by start_year, then per-item number.
     ordered = sorted(
         group,
         key=lambda x: (
             _start_year(x) or 0,
-            _issue_number_int(x) or 0,
+            _planner_number(x) or 0,
         ),
     )
 
-    # Number assignment: prefer CV issue numbers when unique, else synthesize.
-    cv_numbers = [_issue_number_int(it) for it in ordered]
+    # Number assignment: prefer canonical per-item numbers when unique,
+    # else synthesize. CV items use issue_number; MB items parse the
+    # volume number from the decision filename (MB unifies all volumes of
+    # a series under one record, so the metadata carries no per-volume id).
+    raw_numbers = [_planner_number(it) for it in ordered]
     numbers: list[int]
-    if all(n is not None for n in cv_numbers) and len(set(cv_numbers)) == len(cv_numbers):
-        numbers = [n for n in cv_numbers]  # type: ignore[misc]
+    if all(n is not None for n in raw_numbers) and len(set(raw_numbers)) == len(raw_numbers):
+        numbers = [n for n in raw_numbers]  # type: ignore[misc]
     else:
         numbers = list(range(1, len(ordered) + 1))
 
@@ -359,6 +362,52 @@ def _issue_number_int(item: dict[str, Any]) -> int | None:
         return int(raw) if raw is not None else None
     except (TypeError, ValueError):
         return None
+
+
+# Trailing volume number on a normalized manga staging filename.
+# Tolerates a leading 'v' / 'vol' / 'vol.' / 'volume' prefix for safety,
+# but the standard input shape from both kobo and humble is bare
+# trailing integer (e.g., "Golden Kamuy 5.cbz", "Battle Angel Alita 1.cbz").
+_VOLUME_FROM_FILENAME_RE = re.compile(
+    r"(?:^|[\s_\-])"
+    r"(?:v(?:ol(?:ume)?)?\.?\s*)?"
+    r"(\d{1,4})"
+    r"\s*$",
+    re.IGNORECASE,
+)
+
+
+def _volume_from_filename(filename: str | None) -> int | None:
+    """Parse a trailing volume number from a normalized manga filename.
+
+    Both feeders normalize to {series} {N}.cbz before staging:
+      - kobo  : epub2cbz strips the trailing "- Author (RevID)" and the
+                ", Vol." infix.
+      - humble: convert-manga's parent-name shaping strips Vol/Volume.
+    Returns None when no trailing integer is present (caller falls back
+    to sequential numbering).
+    """
+    if not filename:
+        return None
+    stem = filename.rsplit("/", 1)[-1]
+    if "." in stem:
+        stem = stem.rsplit(".", 1)[0]
+    m = _VOLUME_FROM_FILENAME_RE.search(stem)
+    return int(m.group(1)) if m else None
+
+
+def _planner_number(item: dict[str, Any]) -> int | None:
+    """Per-item canonical number for sequencing.
+
+    ComicVine: CV issue_number is authoritative.
+    MangaBaka: parsed from the decision filename. MB unifies all volumes
+    of a series under a single series record, so the metadata carries no
+    per-volume identifier — the filename is the only signal.
+    """
+    source = item.get("source") or DEFAULT_SOURCE
+    if source == "mangabaka":
+        return _volume_from_filename(item.get("decision", {}).get("filename"))
+    return _issue_number_int(item)
 
 
 def _issue_year(issue: dict[str, Any]) -> str | None:

@@ -23,9 +23,11 @@ from bundle_planner import (
     _filter_mb_publishers,
     _issue_year,
     _normalize_casing,
+    _planner_number,
     _resolve_title,
     _split_by_year_distance,
     _strip_series_redundancy,
+    _volume_from_filename,
     plan_bundle,
 )
 
@@ -712,6 +714,162 @@ class IgnoresUncertainTests(unittest.TestCase):
         plans = plan_bundle(decisions, cv)
         self.assertEqual(len(plans), 1)
         self.assertEqual(plans[0].filename, "matched.cbz")
+
+
+class VolumeFromFilenameTests(unittest.TestCase):
+    """Both feeders normalize manga staging filenames before they reach
+    the planner. Kobo's epub2cbz drops `, Vol.` and the author/RevID
+    suffix; humble's convert-manga strips Vol/Volume from the parent
+    name. Both end shapes are `{series} {N}.cbz`, with a few residual
+    forms (`vN`, `vol N`) covered for safety."""
+
+    def test_kobo_trailing_integer(self):
+        # Standard kobo shape post-epub2cbz.
+        self.assertEqual(_volume_from_filename("Golden Kamuy 5.cbz"), 5)
+        self.assertEqual(_volume_from_filename("Battle Angel Alita 1.cbz"), 1)
+
+    def test_kobo_series_with_internal_comma(self):
+        # Title contains a comma in the series name, not from `, Vol.`.
+        self.assertEqual(
+            _volume_from_filename("Don't Toy With Me, Miss Nagatoro 12.cbz"),
+            12,
+        )
+
+    def test_humble_with_explicit_vol_prefix(self):
+        # convert-manga output for the rare item where the sed strip didn't catch it.
+        self.assertEqual(_volume_from_filename("Akira Vol 3.cbz"), 3)
+        self.assertEqual(_volume_from_filename("Akira Vol. 3.cbz"), 3)
+        self.assertEqual(_volume_from_filename("Akira Volume 3.cbz"), 3)
+        self.assertEqual(_volume_from_filename("Akira v03.cbz"), 3)
+
+    def test_no_trailing_number_returns_none(self):
+        # No volume hint — caller falls back to range(1..N).
+        self.assertIsNone(_volume_from_filename("Akira.cbz"))
+        self.assertIsNone(_volume_from_filename(""))
+        self.assertIsNone(_volume_from_filename(None))
+
+    def test_strips_path_and_extension(self):
+        self.assertEqual(
+            _volume_from_filename("/scratch/incoming/manga/Golden Kamuy 5.cbz"),
+            5,
+        )
+
+    def test_three_digit_volumes_supported(self):
+        # Long-running series like One Piece trip past two digits.
+        self.assertEqual(_volume_from_filename("One Piece 105.cbz"), 105)
+
+
+class PlannerNumberTests(unittest.TestCase):
+    def test_comicvine_uses_issue_number(self):
+        item = {
+            "source": "comicvine",
+            "decision": {"filename": "Foo 99.cbz"},
+            "cv_issue": {"issue_number": "7"},
+        }
+        # Should ignore the filename's 99 and trust CV's 7.
+        self.assertEqual(_planner_number(item), 7)
+
+    def test_mangabaka_uses_filename(self):
+        item = {
+            "source": "mangabaka",
+            "decision": {"filename": "Golden Kamuy 5.cbz"},
+            # MB hydrate reuses the series record as cv_issue, no issue_number.
+            "cv_issue": {},
+        }
+        self.assertEqual(_planner_number(item), 5)
+
+    def test_mangabaka_unparseable_filename_returns_none(self):
+        # Caller falls back to sequential numbering when this is None for
+        # any item in the group — same behavior as today's CV fallback path.
+        item = {
+            "source": "mangabaka",
+            "decision": {"filename": "Mystery.cbz"},
+            "cv_issue": {},
+        }
+        self.assertIsNone(_planner_number(item))
+
+
+class MangaBakaSequencingTests(unittest.TestCase):
+    """End-to-end: MB items must sequence by their filename volume number,
+    not by encounter order. Regression coverage for the Golden Kamuy bug
+    where Vol. 5 arrived alone in run 1 → numbered 1; Vols 1-4 arrived in
+    run 2 → numbered 2/3/4/5; on-disk vN no longer matched real volume N.
+    """
+
+    def _mb_decision(self, filename, series_id):
+        # MB hydrate uses volume_id == issue_id == series_id.
+        return make_decision(filename, series_id, series_id) | {"source": "mangabaka"}
+
+    def _mb_client(self, series_id, name, start_year):
+        mb = MagicMock()
+        mb.get_series.return_value = {
+            "id": series_id,
+            "name": name,
+            "start_year": start_year,
+            "publisher": "VIZ",
+            "count_of_issues": 1,
+        }
+        return mb
+
+    def test_kobo_trickle_numbers_by_filename(self):
+        # Mimic the production failure: Vol 5 enters first (run 1), then
+        # Vols 1-4 (run 2). A single decision log with all five entries
+        # must still produce number == filename volume for every item.
+        decisions = [
+            self._mb_decision("Golden Kamuy 5.cbz", 5719),
+            self._mb_decision("Golden Kamuy 1.cbz", 5719),
+            self._mb_decision("Golden Kamuy 2.cbz", 5719),
+            self._mb_decision("Golden Kamuy 3.cbz", 5719),
+            self._mb_decision("Golden Kamuy 4.cbz", 5719),
+        ]
+        plans = plan_bundle(
+            decisions,
+            cv_client=MagicMock(),
+            mb_client=self._mb_client(5719, "Golden Kamuy", 2014),
+            lane="manga",
+        )
+        by_fn = {p.filename: p.number for p in plans}
+        self.assertEqual(
+            by_fn,
+            {
+                "Golden Kamuy 1.cbz": 1,
+                "Golden Kamuy 2.cbz": 2,
+                "Golden Kamuy 3.cbz": 3,
+                "Golden Kamuy 4.cbz": 4,
+                "Golden Kamuy 5.cbz": 5,
+            },
+        )
+
+    def test_unparseable_filenames_fall_back_to_sequential(self):
+        # If filenames don't carry a parseable number, behavior matches the
+        # pre-fix path: sequential 1..N. Better than crashing.
+        decisions = [
+            self._mb_decision("Mystery A.cbz", 999),
+            self._mb_decision("Mystery B.cbz", 999),
+        ]
+        plans = plan_bundle(
+            decisions,
+            cv_client=MagicMock(),
+            mb_client=self._mb_client(999, "Mystery", 2020),
+            lane="manga",
+        )
+        self.assertEqual({p.number for p in plans}, {1, 2})
+
+    def test_humble_vol_form_numbered_by_filename(self):
+        # Humble path: convert-manga generally normalizes to bare integer,
+        # but a `Vol N` residual must still produce the right number.
+        decisions = [
+            self._mb_decision("Akira Vol 1.cbz", 1234),
+            self._mb_decision("Akira Vol 2.cbz", 1234),
+        ]
+        plans = plan_bundle(
+            decisions,
+            cv_client=MagicMock(),
+            mb_client=self._mb_client(1234, "Akira", 1982),
+            lane="manga",
+        )
+        by_fn = {p.filename: p.number for p in plans}
+        self.assertEqual(by_fn, {"Akira Vol 1.cbz": 1, "Akira Vol 2.cbz": 2})
 
 
 if __name__ == "__main__":
