@@ -57,7 +57,7 @@ from kavita_client import KavitaClient
 from mangabaka_client import MangaBakaClient
 
 
-_VERSION = "0.3.5"
+_VERSION = "0.3.6"
 
 
 # Per-lane file output conventions. The planner produces canonical
@@ -302,8 +302,8 @@ def _apply_one(
 
 def _override_comicinfo(cbz_path: Path, plan: ItemPlan, lane: str) -> None:
     """Rewrite Series/Volume/Number/Title in the just-written ComicInfo.xml
-    to the planner's canonical values. lane=manga drops Volume + stamps
-    Manga=Yes so Kavita treats files as chapters, not Volume <year> + chapter."""
+    to the planner's canonical values. lane=manga drops Volume + Title,
+    stamps Manga=Yes, and normalizes Publisher to MB-canonical form."""
     with zipfile.ZipFile(cbz_path, "r") as zin:
         if "ComicInfo.xml" not in zin.namelist():
             raise RuntimeError(f"no ComicInfo.xml after comictagger save: {cbz_path}")
@@ -314,11 +314,15 @@ def _override_comicinfo(cbz_path: Path, plan: ItemPlan, lane: str) -> None:
     new_xml = _set_field(new_xml, "Number", str(plan.number))
     if lane == "manga":
         new_xml = _remove_field(new_xml, "Volume")
+        new_xml = _remove_field(new_xml, "Title")
         new_xml = _set_field(new_xml, "Manga", "Yes")
+        new_xml, change = _normalize_manga_publisher(new_xml)
+        if change:
+            print(f"  normalized publisher: {change[0]!r} → {change[1]!r}")
     else:
         new_xml = _set_field(new_xml, "Volume", str(plan.volume))
-    if plan.title:
-        new_xml = _set_field(new_xml, "Title", plan.title)
+        if plan.title:
+            new_xml = _set_field(new_xml, "Title", plan.title)
     if new_xml == xml:
         return
 
@@ -347,6 +351,42 @@ def _remove_field(xml: str, tag: str) -> str:
     """Strip a top-level <Tag>...</Tag> entry plus its trailing whitespace.
     No-op if absent."""
     return re.sub(rf"\s*<{tag}>[^<]*</{tag}>", "", xml, count=1)
+
+
+# Per-publisher canonicalization for manga lane. Each entry is
+# (regex, canonical_name): a case-insensitive regex matched against the
+# existing <Publisher> value, mapping known variants across CV/OPF/MB to
+# the label MB uses (since we prefer MB for manga matching).
+#
+# Add entries only when a real variant has been observed in the wild.
+# Patterns must NOT match the upstream Japanese parent entity (e.g., bare
+# "Kodansha" is the Original publisher, not the English imprint we're
+# unifying).
+PUBLISHER_CANONICAL: list[tuple[re.Pattern, str]] = [
+    # Kodansha imprint variants seen across CV ("Kodansha Comics USA"),
+    # Kobo OPF ("Kodansha Comics"), and MB ("Kodansha Manga"). Excludes
+    # bare "Kodansha" which is the Japanese original parent.
+    (
+        re.compile(r"^\s*Kodansha\s+(?:Comics(?:\s+USA)?|Manga)\s*$", re.IGNORECASE),
+        "Kodansha Manga",
+    ),
+]
+
+
+def _normalize_manga_publisher(
+    xml: str,
+) -> tuple[str, tuple[str, str] | None]:
+    """If <Publisher> matches a known variant pattern, rewrite it to the
+    canonical form. Returns (new_xml, (old, new)) when a rewrite happened;
+    (xml, None) otherwise. Caller prints the change for traceability."""
+    m = re.search(r"<Publisher>([^<]+)</Publisher>", xml)
+    if not m:
+        return xml, None
+    current = m.group(1).strip()
+    for pattern, canonical in PUBLISHER_CANONICAL:
+        if pattern.match(current) and current != canonical:
+            return _set_field(xml, "Publisher", canonical), (current, canonical)
+    return xml, None
 
 
 # ---- applied log -------------------------------------------------------

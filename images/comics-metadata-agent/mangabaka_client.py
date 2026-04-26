@@ -151,6 +151,7 @@ def _simplify_series(raw: dict[str, Any]) -> dict[str, Any]:
         "name": raw.get("title"),
         "native_title": raw.get("native_title"),
         "romanized_title": raw.get("romanized_title"),
+        "aliases": _extract_aliases(raw),
         "start_year": raw.get("year"),
         "publisher": publisher_name,
         "count_of_issues": count_of_issues,
@@ -161,6 +162,30 @@ def _simplify_series(raw: dict[str, Any]) -> dict[str, Any]:
         "status": raw.get("status"),
         "content_rating": raw.get("content_rating"),
     }
+
+
+def _extract_aliases(raw: dict[str, Any]) -> list[str]:
+    """Flatten MB's `secondary_titles` (nested by language) into a deduped
+    string list, excluding the primary title. These are alternate names MB
+    knows for the series but doesn't track as separate records — useful
+    for the agent to recognize variant editions like "<Series> Omnibus"."""
+    out: list[str] = []
+    seen: set[str] = set()
+    primary = raw.get("title")
+    if primary:
+        seen.add(primary)
+    secondary = raw.get("secondary_titles") or {}
+    if not isinstance(secondary, dict):
+        return out
+    for bucket in secondary.values():
+        if not isinstance(bucket, list):
+            continue
+        for entry in bucket:
+            t = entry.get("title") if isinstance(entry, dict) else None
+            if t and t not in seen:
+                out.append(t)
+                seen.add(t)
+    return out
 
 
 def _pick_cover_url(cover: dict[str, Any]) -> str | None:
