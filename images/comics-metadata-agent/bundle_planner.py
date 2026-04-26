@@ -50,6 +50,10 @@ class ItemPlan:
     title: str
     year: str | int | None
     source: str = DEFAULT_SOURCE
+    # Filtered Publisher value the apply step writes verbatim, bypassing
+    # comictagger's default. Set for MB matches when the source's
+    # publishers list yields a usable filtered subset; None otherwise.
+    publisher: str | None = None
 
 
 def plan_bundle(
@@ -265,6 +269,12 @@ def _plan_group(
 
         year = _issue_year(item["cv_issue"]) or _start_year(item)
 
+        source = item.get("source") or DEFAULT_SOURCE
+        publisher = (
+            _filter_mb_publishers(item["cv_volume"])
+            if source == "mangabaka" else None
+        )
+
         plans.append(ItemPlan(
             filename=decision["filename"],
             issue_id=int(decision["issue_id"]),
@@ -274,9 +284,39 @@ def _plan_group(
             number=number,
             title=title,
             year=year,
-            source=item.get("source") or DEFAULT_SOURCE,
+            source=source,
+            publisher=publisher,
         ))
     return plans
+
+
+def _filter_mb_publishers(volume: dict[str, Any]) -> str | None:
+    """For MB records: filter the full publishers list to entries that are
+    type=English with a meaningful note (non-null, not "digital"); join the
+    survivors comma-separated. Returns None when nothing survives — caller
+    falls back to comictagger's default Publisher write.
+
+    The note check excludes platforms (e.g., MB tags `Omoi` as note=digital)
+    and unannotated entries (note=null on aggregator-style listings); real
+    licensees consistently carry notes describing volume counts or release
+    years.
+    """
+    raw = volume.get("publishers")
+    if not isinstance(raw, list):
+        return None
+    survivors: list[str] = []
+    for p in raw:
+        if not isinstance(p, dict):
+            continue
+        if (p.get("type") or "").strip().lower() != "english":
+            continue
+        note = (p.get("note") or "").strip().lower()
+        if not note or note == "digital":
+            continue
+        name = (p.get("name") or "").strip()
+        if name and name not in survivors:
+            survivors.append(name)
+    return ", ".join(survivors) if survivors else None
 
 
 def _canonical_series_name(

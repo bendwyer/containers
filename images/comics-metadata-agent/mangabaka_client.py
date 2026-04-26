@@ -154,6 +154,10 @@ def _simplify_series(raw: dict[str, Any]) -> dict[str, Any]:
         "aliases": _extract_aliases(raw),
         "start_year": raw.get("year"),
         "publisher": publisher_name,
+        # Full list with type+note preserved so the planner can filter
+        # by licensee criteria (type=English, real note) rather than
+        # just exposing the first entry.
+        "publishers": raw.get("publishers") or [],
         "count_of_issues": count_of_issues,
         "description_html": raw.get("description"),
         "image_url": _pick_cover_url(cover),

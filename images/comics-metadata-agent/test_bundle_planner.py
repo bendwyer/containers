@@ -20,6 +20,7 @@ from bundle_planner import (
     _coarse_key,
     _detect_dominant_volume_width,
     _extract_subtitle,
+    _filter_mb_publishers,
     _issue_year,
     _normalize_casing,
     _resolve_title,
@@ -379,6 +380,54 @@ class CoarseKeyTests(unittest.TestCase):
             "source": "mangabaka",
         }
         self.assertNotEqual(_coarse_key(cv_item), _coarse_key(mb_item))
+
+
+class FilterMbPublishersTests(unittest.TestCase):
+    def test_single_english_with_note_kept(self):
+        # Manhole shape: Kana (US) English w/ note; Square Enix Original.
+        vol = {"publishers": [
+            {"name": "Kana (US)", "type": "English", "note": "3 Volume; Complete"},
+            {"name": "Square Enix", "type": "Original", "note": "2005, 2008, 2015"},
+        ]}
+        self.assertEqual(_filter_mb_publishers(vol), "Kana (US)")
+
+    def test_drops_digital_and_unannotated_english(self):
+        # BAA: Last Order shape: Omoi=digital, INKR=null, Kodansha Manga=Complete.
+        vol = {"publishers": [
+            {"name": "Omoi", "type": "English", "note": "digital"},
+            {"name": "INKR Comics", "type": "English", "note": None},
+            {"name": "Kodansha", "type": "Original", "note": ""},
+            {"name": "Kodansha Manga", "type": "English",
+             "note": "19 Volumes - Complete"},
+            {"name": "Shueisha", "type": "Original", "note": "1972"},
+        ]}
+        self.assertEqual(_filter_mb_publishers(vol), "Kodansha Manga")
+
+    def test_multi_licensee_completed_series_joined(self):
+        # BAA #1 shape: two real English licensees with notes.
+        vol = {"publishers": [
+            {"name": "Omoi", "type": "English", "note": "digital"},
+            {"name": "INKR Comics", "type": "English", "note": None},
+            {"name": "Kodansha Manga", "type": "English",
+             "note": "9 Volumes - Complete"},
+            {"name": "VIZ Media", "type": "English",
+             "note": "9 Volumes - Complete"},
+        ]}
+        self.assertEqual(
+            _filter_mb_publishers(vol),
+            "Kodansha Manga, VIZ Media",
+        )
+
+    def test_returns_none_when_nothing_survives(self):
+        vol = {"publishers": [
+            {"name": "Foo Digital", "type": "English", "note": "digital"},
+            {"name": "Bar Reader", "type": "English", "note": None},
+        ]}
+        self.assertIsNone(_filter_mb_publishers(vol))
+
+    def test_returns_none_when_publishers_missing(self):
+        self.assertIsNone(_filter_mb_publishers({}))
+        self.assertIsNone(_filter_mb_publishers({"publishers": None}))
 
 
 class IssueYearTests(unittest.TestCase):
