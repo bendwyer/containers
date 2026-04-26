@@ -83,45 +83,27 @@ renumber and restart. Cover art and source context are stronger signals.
 
 For lane=comics: use ComicVine. Skip MangaBaka entirely.
 
-For lane=manga: try MangaBaka first. A MangaBaka candidate is a "plausible \
-match" only when ALL of: \
+For lane=manga: prefer MangaBaka. MB anchors the original work and \
+unifies licensee editions under one series record, which is what the \
+library wants. A MB candidate is "plausible" when ALL of: \
   (a) the candidate's title (or romanized_title) is a close lexical match \
       to the parsed filename series — same disambiguation threshold you'd \
-      use for ComicVine; \
+      use for ComicVine. An alias-only match (filename matches MB's \
+      `aliases` but not the primary title or romanized_title) does NOT \
+      satisfy (a): MB knows a variant edition exists but doesn't track it \
+      as a discrete record, and CV likely has a dedicated record for the \
+      variant; \
   (b) start_year is consistent with the source's inferred_year_range \
       (when the source supplied one); \
   (c) the candidate's type is one of "manga", "manhwa", "manhua", or "oel" \
-      — never "novel"; \
-  (d) the item is NOT an omnibus. Omnibus signals: filename contains \
-      "Omnibus", "Big Book", "Complete", "Collection", or a multi-volume \
-      range like "Vol 1-3" / "Vols 1-3"; or the cover image clearly says \
-      "Omnibus" / "Collected Edition"; or the file's page count is \
-      conspicuously high for one volume (~600+ pages); \
-  (e) the file's structure aligns with MangaBaka's data unit. MangaBaka \
-      models the original Japanese chapter-series; ComicVine often models \
-      the Western licensee's volume releases (Dark Horse Manga, VIZ Media, \
-      Yen Press, Kodansha USA, Seven Seas, Tokyopop, Vertical, Abrams \
-      ComicArts/Kana, etc.). When the source's inferred_publisher names a \
-      Western manga licensee, OR MangaBaka's candidate has chapter-based \
-      structure (count_of_issues / total_chapters in the dozens-to-hundreds) \
-      but the filename implies discrete volumes ("Vol 1", "Vol 2"), prefer \
-      ComicVine — but only if CV has a candidate matching the source's \
-      licensee or language. \
+      — never "novel". \
 
 Resolution order for lane=manga: \
-  1. MangaBaka if a candidate satisfies all of (a)–(e). \
-  2. Else ComicVine if it has a candidate matching the source's licensee \
-     or language. \
-  3. Else MangaBaka if any candidate satisfies (a)–(d) — when CV has only \
-     foreign-language editions or no entry at all, MB's original-language \
-     record is the right series anchor; the underlying work is the same. \
-     Never pick a wrong-language CV edition just to record an id. \
-  4. Else uncertain. \
-
-Examples: omnibuses fall to CV (rule d). Dark Horse / VIZ / Yen Press \
-licensed editions of older Japanese manga land on CV (rule e — Lone Wolf \
-and Cub, Lady Snowblood, Crying Freeman). Recent Abrams/Kana English \
-editions where CV has only DE/IT/ES entries land on MB via step 3. \
+  1. MangaBaka if a candidate satisfies (a)–(c). \
+  2. Else ComicVine. This catches omnibuses (filename carries an "Omnibus", \
+     "Big Book", "Complete", or "Vol 1-3" token, so MB's bare-series record \
+     fails (a)) and rare titles MB hasn't indexed. \
+  3. Else uncertain. \
 
 When recording the decision, set the `source` field to the service whose \
 id you're recording: "comicvine" or "mangabaka". For MangaBaka, use the \
@@ -208,8 +190,11 @@ TOOLS: list[dict[str, Any]] = [
         "description": (
             "Search MangaBaka for series matching a title. Returns a list of "
             "MangaBaka series with id, name (title), native_title, "
-            "romanized_title, start_year, publisher, count_of_issues, "
-            "image_url, type (manga/manhwa/manhua/novel/oel/other). "
+            "romanized_title, aliases (alternate titles MB knows for the "
+            "series, e.g., '<Series> Omnibus' even though MB doesn't track "
+            "the omnibus as a separate record), start_year, publisher, "
+            "count_of_issues, image_url, type "
+            "(manga/manhwa/manhua/novel/oel/other). "
             "MangaBaka models series only — there are no separate per-issue "
             "records, so the series id IS the volume_id IS the issue_id when "
             "you record a match."

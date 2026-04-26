@@ -115,7 +115,7 @@ class SearchTests(unittest.TestCase):
         url = session.get.call_args.args[0]
         self.assertEqual(url, "https://api.mangabaka.dev/v1/series/search")
         params = session.get.call_args.kwargs["params"]
-        self.assertEqual(params["title"], "foo")
+        self.assertEqual(params["q"], "foo")
         self.assertEqual(params["limit"], 50)
 
 
@@ -200,6 +200,29 @@ class SimplifyTests(unittest.TestCase):
             "total_chapters": "ongoing",
         })
         self.assertIsNone(s["count_of_issues"])
+
+    def test_simplify_extracts_aliases_excluding_primary(self):
+        s = _simplify_series({
+            "id": 1,
+            "title": "Foo",
+            "year": 2020,
+            "secondary_titles": {
+                "unknown": [
+                    {"title": "Foo", "note": None},      # dup of primary, drop
+                    {"title": "Foo Omnibus", "note": None},
+                    {"title": "Bar", "note": None},
+                    {"title": "Foo Omnibus", "note": "x"},  # dup, drop
+                ],
+                "ja": [
+                    {"title": "フー", "note": None},
+                ],
+            },
+        })
+        self.assertEqual(s["aliases"], ["Foo Omnibus", "Bar", "フー"])
+
+    def test_simplify_aliases_empty_when_no_secondary(self):
+        s = _simplify_series({"id": 1, "title": "Foo", "year": 2020})
+        self.assertEqual(s["aliases"], [])
 
     def test_call_count_reflects_http_calls(self):
         c, _ = make_client([
