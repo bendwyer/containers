@@ -103,33 +103,56 @@ class TagsMatchPlanTests(unittest.TestCase):
     def test_full_match(self):
         plan = self._plan()
         current = {"Series": "Foo", "Volume": "2022", "Number": "1", "Title": "Volume 1"}
-        self.assertTrue(_tags_match_plan(current, plan))
+        self.assertTrue(_tags_match_plan(current, plan, "comics"))
 
     def test_series_mismatch(self):
         plan = self._plan()
         current = {"Series": "Bar", "Volume": "2022", "Number": "1", "Title": "Volume 1"}
-        self.assertFalse(_tags_match_plan(current, plan))
+        self.assertFalse(_tags_match_plan(current, plan, "comics"))
 
     def test_volume_mismatch(self):
         plan = self._plan()
         current = {"Series": "Foo", "Volume": "2025", "Number": "1", "Title": "Volume 1"}
-        self.assertFalse(_tags_match_plan(current, plan))
+        self.assertFalse(_tags_match_plan(current, plan, "comics"))
 
     def test_number_mismatch(self):
         plan = self._plan()
         current = {"Series": "Foo", "Volume": "2022", "Number": "5", "Title": "Volume 1"}
-        self.assertFalse(_tags_match_plan(current, plan))
+        self.assertFalse(_tags_match_plan(current, plan, "comics"))
 
     def test_title_mismatch(self):
         plan = self._plan(title="Volume 1: Subtitle")
         current = {"Series": "Foo", "Volume": "2022", "Number": "1", "Title": "Volume 1"}
-        self.assertFalse(_tags_match_plan(current, plan))
+        self.assertFalse(_tags_match_plan(current, plan, "comics"))
 
     def test_empty_plan_title_skips_check(self):
         # When planner has no Title preference, current's existing Title is OK.
         plan = self._plan(title="")
         current = {"Series": "Foo", "Volume": "2022", "Number": "1", "Title": "anything"}
-        self.assertTrue(_tags_match_plan(current, plan))
+        self.assertTrue(_tags_match_plan(current, plan, "comics"))
+
+    def test_manga_full_match(self):
+        # Manga apply writes Volume=number, no Number, no Title.
+        plan = self._plan(volume=2014, number=2, title="Volume 2")
+        current = {"Series": "Foo", "Volume": "2", "Number": "", "Title": ""}
+        self.assertTrue(_tags_match_plan(current, plan, "manga"))
+
+    def test_manga_volume_mismatch(self):
+        plan = self._plan(number=2)
+        current = {"Series": "Foo", "Volume": "5", "Number": "", "Title": ""}
+        self.assertFalse(_tags_match_plan(current, plan, "manga"))
+
+    def test_manga_unexpected_number_fails(self):
+        # A leftover <Number> tag (e.g., legacy file from before the manga
+        # volume-centric change) marks the file as needing rewrite.
+        plan = self._plan(number=2)
+        current = {"Series": "Foo", "Volume": "2", "Number": "2", "Title": ""}
+        self.assertFalse(_tags_match_plan(current, plan, "manga"))
+
+    def test_manga_unexpected_title_fails(self):
+        plan = self._plan(number=2)
+        current = {"Series": "Foo", "Volume": "2", "Number": "", "Title": "Volume 2"}
+        self.assertFalse(_tags_match_plan(current, plan, "manga"))
 
 
 class CanonicalFilenameTests(unittest.TestCase):

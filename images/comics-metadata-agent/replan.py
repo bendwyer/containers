@@ -58,7 +58,7 @@ from kavita_client import KavitaClient
 from mangabaka_client import MangaBakaClient
 
 
-_VERSION = "0.3.12"
+_VERSION = "0.3.13"
 
 
 # ID is embedded in <Web> (most reliable) and <Notes> (fallback). Source is
@@ -136,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
         try:
             current = _read_current_tags(cbz)
-            tags_match = _tags_match_plan(current, plan)
+            tags_match = _tags_match_plan(current, plan, lane)
             dest_folder = _resolve_destination(plan, library_root, kavita, config)
             dest_filename = _canonical_filename(plan, config)
             dest_path = dest_folder / dest_filename
@@ -148,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
                 continue
 
             if not tags_match:
-                _override_comicinfo(cbz, plan)
+                _override_comicinfo(cbz, plan, lane)
                 n_updated += 1
 
             if not location_match:
@@ -267,16 +267,32 @@ def _field(xml: str, tag: str) -> str:
     return m.group(1).strip() if m else ""
 
 
-def _tags_match_plan(current: dict[str, str], plan: ItemPlan) -> bool:
-    """True if current tags already match the plan exactly."""
+def _tags_match_plan(
+    current: dict[str, str],
+    plan: ItemPlan,
+    lane: str,
+) -> bool:
+    """True if current tags already match the apply-output shape for the lane.
+
+    Comics: Volume=plan.volume (year), Number=plan.number, Title=plan.title.
+    Manga:  Volume=plan.number (volume number), Number absent, Title absent.
+    """
     if current["Series"] != plan.series:
         return False
-    if current["Volume"] != str(plan.volume):
-        return False
-    if current["Number"] != str(plan.number):
-        return False
-    if plan.title and current["Title"] != plan.title:
-        return False
+    if lane == "manga":
+        if current["Volume"] != str(plan.number):
+            return False
+        if current["Number"]:
+            return False
+        if current["Title"]:
+            return False
+    else:
+        if current["Volume"] != str(plan.volume):
+            return False
+        if current["Number"] != str(plan.number):
+            return False
+        if plan.title and current["Title"] != plan.title:
+            return False
     return True
 
 
