@@ -153,7 +153,7 @@ class CanonicalFilenameTests(unittest.TestCase):
         plan = self._plan(series="Foo Manga", volume=2020, number=2, year=2021)
         self.assertEqual(
             _canonical_filename(plan, LANE_CONFIG["manga"]),
-            "Foo Manga #002 (2021).cbz",
+            "Foo Manga v002 (2021).cbz",
         )
 
     def test_zero_pads_number(self):

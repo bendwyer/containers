@@ -57,7 +57,7 @@ from kavita_client import KavitaClient
 from mangabaka_client import MangaBakaClient
 
 
-_VERSION = "0.3.9"
+_VERSION = "0.3.10"
 
 
 # Per-lane file output conventions. The planner produces canonical
@@ -69,7 +69,9 @@ LANE_CONFIG: dict[str, dict[str, Any]] = {
         "folder_with_year": True,
     },
     "manga": {
-        "filename_template": "{series} #{issue} ({year})",
+        # `v{issue}` so Kavita's filename parser detects each file as a
+        # volume rather than a chapter. ComicInfo <Volume> reinforces this.
+        "filename_template": "{series} v{issue} ({year})",
         "folder_with_year": False,
     },
 }
@@ -301,9 +303,14 @@ def _apply_one(
 
 
 def _override_comicinfo(cbz_path: Path, plan: ItemPlan, lane: str) -> None:
-    """Rewrite Series/Volume/Number/Title in the just-written ComicInfo.xml
-    to the planner's canonical values. lane=manga drops Volume + Title,
-    stamps Manga=Yes, and normalizes Publisher to MB-canonical form."""
+    """Rewrite ComicInfo.xml to the planner's canonical values.
+
+    lane=comics: standard Series/Volume(year)/Number/Title shape.
+    lane=manga: each file is one whole volume — write <Volume> as the
+    volume number (the planner's `number`), drop <Number> and <Title>,
+    stamp Manga=Yes, normalize Publisher to MB-canonical form. Kavita's
+    manga library reads <Volume> to display by volume rather than chapter.
+    """
     with zipfile.ZipFile(cbz_path, "r") as zin:
         if "ComicInfo.xml" not in zin.namelist():
             raise RuntimeError(f"no ComicInfo.xml after comictagger save: {cbz_path}")
@@ -311,19 +318,18 @@ def _override_comicinfo(cbz_path: Path, plan: ItemPlan, lane: str) -> None:
 
     new_xml = xml
     new_xml = _set_field(new_xml, "Series", plan.series)
-    new_xml = _set_field(new_xml, "Number", str(plan.number))
     if lane == "manga":
-        new_xml = _remove_field(new_xml, "Volume")
+        new_xml = _set_field(new_xml, "Volume", str(plan.number))
+        new_xml = _remove_field(new_xml, "Number")
         new_xml = _remove_field(new_xml, "Title")
         new_xml = _set_field(new_xml, "Manga", "Yes")
         if plan.publisher:
-            # Planner has already filtered the MB publishers list to a
-            # usable subset; bypass comictagger's default-pick.
             new_xml = _set_field(new_xml, "Publisher", plan.publisher)
         new_xml, change = _normalize_manga_publisher(new_xml)
         if change:
             print(f"  normalized publisher: {change[0]!r} → {change[1]!r}")
     else:
+        new_xml = _set_field(new_xml, "Number", str(plan.number))
         new_xml = _set_field(new_xml, "Volume", str(plan.volume))
         if plan.title:
             new_xml = _set_field(new_xml, "Title", plan.title)
