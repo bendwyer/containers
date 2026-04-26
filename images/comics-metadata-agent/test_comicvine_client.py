@@ -42,6 +42,7 @@ VOLUME_RAW = {
     "description": "<p>A superhero series.</p>",
     "image": {"original_url": "https://comicvine/img/orig.jpg"},
     "site_detail_url": "https://comicvine.gamespot.com/radiant-black/4050-796/",
+    "resource_type": "volume",
 }
 
 ISSUE_RAW = {
@@ -171,6 +172,29 @@ class SearchVolumesTests(unittest.TestCase):
         # Cache hit doesn't bump counter.
         self.client.search_volumes("a")
         self.assertEqual(self.client.call_count, 2)
+
+    def test_uses_search_endpoint_not_volumes_filter(self):
+        # Regression: /volumes/?filter=name: silently drops legit hits;
+        # /search/?resources=volume does not. Lock the endpoint choice.
+        self.session.get.return_value = _FakeResponse(200, ok([VOLUME_RAW]))
+        self.client.search_volumes("Radiant Black")
+        url = self.session.get.call_args.args[0]
+        params = self.session.get.call_args.kwargs["params"]
+        self.assertTrue(url.endswith("/search/"), url)
+        self.assertEqual(params["query"], "Radiant Black")
+        self.assertEqual(params["resources"], "volume")
+        self.assertNotIn("filter", params)
+
+    def test_drops_non_volume_resource_types(self):
+        # /search/ should only return volumes for resources=volume but
+        # defensively filter in case CV ever mixes types.
+        non_volume = dict(VOLUME_RAW, id=999, resource_type="issue")
+        self.session.get.return_value = _FakeResponse(
+            200, ok([VOLUME_RAW, non_volume]),
+        )
+        vols = self.client.search_volumes("Radiant Black")
+        self.assertEqual(len(vols), 1)
+        self.assertEqual(vols[0]["id"], 796)
 
 
 class GetVolumeTests(unittest.TestCase):

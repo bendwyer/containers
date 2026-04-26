@@ -68,20 +68,26 @@ class ComicVineClient:
         name: str,
         year_range: tuple[int, int] | None = None,
     ) -> list[dict[str, Any]]:
-        """Search for volumes matching a series name.
+        """Search for volumes matching a series name via /search/.
 
-        year_range, if provided as (min_year, max_year), filters results
-        client-side. Cache key is the unfiltered name so multiple queries
-        for the same name with different year ranges share one API call.
+        Uses /search/?resources=volume rather than /volumes/?filter=name:
+        — the latter silently drops legitimate hits (returns 0 results
+        for queries the search endpoint resolves to 2000+ hits).
+
+        year_range filters client-side; cache key is name-only so different
+        year ranges share one API call.
         """
         cache_key = name.lower().strip()
         if cache_key not in self._volume_search_cache:
             body = self._request(
-                "/volumes/",
-                filter=f"name:{name}",
+                "/search/",
+                query=name,
+                resources="volume",
                 limit=100,
             )
             results = body.get("results") or []
+            # Defensive: /search/ honors `resources=` but cheap to enforce.
+            results = [r for r in results if r.get("resource_type") == "volume"]
             self._volume_search_cache[cache_key] = [_simplify_volume(v) for v in results]
         candidates = self._volume_search_cache[cache_key]
         if year_range is not None:
