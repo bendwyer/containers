@@ -288,6 +288,30 @@ class CanonicalNameTests(unittest.TestCase):
         ]
         self.assertEqual(_canonical_series_name(items), "Foo")
 
+    def test_mangabaka_preserves_colon_suffix(self):
+        # For MB, "Series: Subseries" denotes a distinct series, so the
+        # full name must be preserved (Battle Angel Alita: Last Order is
+        # not "Battle Angel Alita").
+        items = [
+            {
+                "source": "mangabaka",
+                "cv_volume": make_volume(1, "Battle Angel Alita: Last Order", 2001),
+            },
+        ]
+        self.assertEqual(
+            _canonical_series_name(items),
+            "Battle Angel Alita: Last Order",
+        )
+
+    def test_comicvine_still_strips_colon_suffix(self):
+        items = [
+            {
+                "source": "comicvine",
+                "cv_volume": make_volume(1, "C.O.W.L.: Principles of Power", 2014),
+            },
+        ]
+        self.assertEqual(_canonical_series_name(items), "C.O.W.L.")
+
     def test_canonical_volume_uses_earliest(self):
         items = [
             {"cv_volume": make_volume(1, "Foo", 2025)},
