@@ -279,11 +279,21 @@ def _plan_group(group: list[dict[str, Any]]) -> list[ItemPlan]:
 
 
 def _canonical_series_name(group: list[dict[str, Any]]) -> str:
-    """Most common base name across the group; ties broken by first occurrence."""
+    """Most common base name across the group; ties broken by first occurrence.
+
+    For ComicVine, splits on `:` so TPB-style names ("Series: Subtitle")
+    yield the bare series and the subtitle becomes a Title. For MangaBaka,
+    the colon denotes a distinct series — "Battle Angel Alita: Last Order"
+    is a different work from "Battle Angel Alita" — so the full name is
+    preserved verbatim.
+    """
     bases = []
     for it in group:
         name = (it["cv_volume"].get("name") or "").strip()
-        bases.append(name.split(":", 1)[0].strip())
+        if (it.get("source") or DEFAULT_SOURCE) == "mangabaka":
+            bases.append(name)
+        else:
+            bases.append(name.split(":", 1)[0].strip())
     return Counter(bases).most_common(1)[0][0]
 
 
