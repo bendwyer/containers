@@ -217,7 +217,7 @@ class FileIndexTests(unittest.TestCase):
             self._make_cbz(root / "Bar (2021)" / "b.cbz", 200)
             self._make_cbz(root / "deep" / "nested" / "c.cbz", 300)
 
-            index = _build_issue_id_index(root)
+            index = _build_issue_id_index(root, lane="comics")
             self.assertEqual(
                 set(index.keys()),
                 {("comicvine", 100), ("comicvine", 200), ("comicvine", 300)},
@@ -245,7 +245,7 @@ class FileIndexTests(unittest.TestCase):
                     "<Web>https://mangabaka.dev/series/42</Web>"
                     "</ComicInfo>",
                 )
-            index = _build_issue_id_index(root)
+            index = _build_issue_id_index(root, lane="comics")
             self.assertEqual(index[("comicvine", 42)], cv_path)
             self.assertEqual(index[("mangabaka", 42)], mb_path)
 
@@ -255,13 +255,96 @@ class FileIndexTests(unittest.TestCase):
             cbz = root / "x.cbz"
             with zipfile.ZipFile(cbz, "w") as z:
                 z.writestr("page1.jpg", b"x")
-            self.assertEqual(_build_issue_id_index(root), {})
+            self.assertEqual(_build_issue_id_index(root, lane="comics"), {})
 
     def test_skips_unparseable_web(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             self._make_cbz(root / "x.cbz", None)
-            self.assertEqual(_build_issue_id_index(root), {})
+            self.assertEqual(_build_issue_id_index(root, lane="comics"), {})
+
+
+class FileIndexMangaTests(unittest.TestCase):
+    """Manga lane: MB unifies all volumes of a series under one record,
+    so siblings collide on (source, issue_id). Index must include the
+    on-disk <Volume> tag as a third coordinate to disambiguate."""
+
+    def _make_mb_cbz(self, path: Path, series_id: int, volume: int | str):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        xml = (
+            "<ComicInfo>"
+            f"<Web>https://mangabaka.dev/series/{series_id}</Web>"
+            f"<Volume>{volume}</Volume>"
+            "</ComicInfo>"
+        )
+        with zipfile.ZipFile(path, "w") as z:
+            z.writestr("ComicInfo.xml", xml)
+
+    def test_indexes_all_siblings_separately(self):
+        # Regression for the manga blind spot: pre-fix, only one of five
+        # files indexed (first-wins on collision) — the rest silently
+        # skipped by replan.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for n in range(1, 6):
+                self._make_mb_cbz(
+                    root / "Golden Kamuy" / f"Golden Kamuy v{n:03d} (2014).cbz",
+                    series_id=5719,
+                    volume=n,
+                )
+            index = _build_issue_id_index(root, lane="manga")
+            self.assertEqual(
+                set(index.keys()),
+                {("mangabaka", 5719, n) for n in range(1, 6)},
+            )
+
+    def test_lookup_by_plan_volume_returns_correct_sibling(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            paths = {}
+            for n in range(1, 4):
+                p = root / "Foo" / f"Foo v{n:03d} (2020).cbz"
+                self._make_mb_cbz(p, series_id=99, volume=n)
+                paths[n] = p
+            index = _build_issue_id_index(root, lane="manga")
+            self.assertEqual(index[("mangabaka", 99, 1)], paths[1])
+            self.assertEqual(index[("mangabaka", 99, 2)], paths[2])
+            self.assertEqual(index[("mangabaka", 99, 3)], paths[3])
+
+    def test_missing_volume_tag_indexed_with_none(self):
+        # Defensive: a manga file missing <Volume> shouldn't crash the
+        # walker. It indexes under (..., None) — won't match a plan
+        # lookup that always has a real number, so replan reports MISS.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cbz = root / "x.cbz"
+            xml = (
+                "<ComicInfo>"
+                "<Web>https://mangabaka.dev/series/1</Web>"
+                "</ComicInfo>"
+            )
+            with zipfile.ZipFile(cbz, "w") as z:
+                z.writestr("ComicInfo.xml", xml)
+            index = _build_issue_id_index(root, lane="manga")
+            self.assertEqual(set(index.keys()), {("mangabaka", 1, None)})
+
+    def test_non_integer_volume_tag_indexed_with_none(self):
+        # Fresh file from a buggy older apply might carry a year-style
+        # Volume tag (e.g. "2014"). Anything int-castable becomes the
+        # third coordinate; non-numeric falls to None.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cbz = root / "x.cbz"
+            xml = (
+                "<ComicInfo>"
+                "<Web>https://mangabaka.dev/series/1</Web>"
+                "<Volume>not-a-number</Volume>"
+                "</ComicInfo>"
+            )
+            with zipfile.ZipFile(cbz, "w") as z:
+                z.writestr("ComicInfo.xml", xml)
+            index = _build_issue_id_index(root, lane="manga")
+            self.assertEqual(set(index.keys()), {("mangabaka", 1, None)})
 
 
 class ReadCurrentTagsTests(unittest.TestCase):

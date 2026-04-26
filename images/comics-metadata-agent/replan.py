@@ -58,7 +58,7 @@ from kavita_client import KavitaClient
 from mangabaka_client import MangaBakaClient
 
 
-_VERSION = "0.3.14"
+_VERSION = "0.3.15"
 
 
 # ID is embedded in <Web> (most reliable) and <Notes> (fallback). Source is
@@ -112,8 +112,12 @@ def main(argv: list[str] | None = None) -> int:
     plans = plan_bundle(eligible, cv, mb)
     print(f"Decisions: total={len(decisions)} eligible={len(eligible)} planned={len(plans)}")
 
-    file_index = _build_issue_id_index(library_root)
-    print(f"Library scan: indexed {len(file_index)} files by (source, issue_id)")
+    file_index = _build_issue_id_index(library_root, lane)
+    key_shape = (
+        "(source, issue_id, volume)" if lane == "manga"
+        else "(source, issue_id)"
+    )
+    print(f"Library scan: indexed {len(file_index)} files by {key_shape}")
 
     kavita = KavitaClient(args.kavita_url, kavita_key)
     kavita.authenticate()
@@ -126,11 +130,16 @@ def main(argv: list[str] | None = None) -> int:
     affected_dirs: set[Path] = set()
 
     for plan in plans:
-        cbz = file_index.get((plan.source, plan.issue_id))
+        lookup_key: tuple = (
+            (plan.source, plan.issue_id, plan.number) if lane == "manga"
+            else (plan.source, plan.issue_id)
+        )
+        cbz = file_index.get(lookup_key)
         if cbz is None:
             print(
-                f"MISS {plan.filename}  ({plan.source}, issue_id={plan.issue_id}) "
-                f"not found in library"
+                f"MISS {plan.filename}  ({plan.source}, issue_id={plan.issue_id}"
+                + (f", vol={plan.number}" if lane == "manga" else "")
+                + ") not found in library"
             )
             n_missing += 1
             continue
@@ -196,13 +205,25 @@ def main(argv: list[str] | None = None) -> int:
 # ---- file location ------------------------------------------------------
 
 
-def _build_issue_id_index(library_root: Path) -> dict[tuple[str, int], Path]:
-    """Walk the library lane and index .cbz files by (source, issue_id).
+def _build_issue_id_index(
+    library_root: Path,
+    lane: str,
+) -> dict[tuple, Path]:
+    """Walk the library lane and index .cbz files for plan→file lookup.
 
-    The source/id pair disambiguates: a numeric ID like 12345 could
-    coincidentally exist in both ComicVine and MangaBaka's id spaces.
+    Key shape depends on lane:
+      - comics: (source, issue_id) — issue_id alone disambiguates because
+        each ComicVine issue is unique to one volume.
+      - manga:  (source, issue_id, volume_int) — MangaBaka unifies all
+        volumes of a series under a single issue_id (== series_id), so
+        siblings collide on (source, issue_id) alone. The on-disk
+        <Volume> tag (set by apply.py to the planner's number) is the
+        third coordinate.
+
+    The source coordinate disambiguates across CV / MB id spaces, where
+    a numeric id like 12345 could coincidentally exist in both.
     """
-    index: dict[tuple[str, int], Path] = {}
+    index: dict[tuple, Path] = {}
     for cbz in library_root.rglob("*.cbz"):
         try:
             with zipfile.ZipFile(cbz, "r") as z:
@@ -211,11 +232,21 @@ def _build_issue_id_index(library_root: Path) -> dict[tuple[str, int], Path]:
                 xml = z.read("ComicInfo.xml").decode("utf-8")
         except (zipfile.BadZipFile, OSError):
             continue
-        key = _extract_source_and_id(xml)
-        if key is not None:
-            # First-wins; duplicates would mean two files claiming the same
-            # source+id, which is itself a problem to surface — but rare.
-            index.setdefault(key, cbz)
+        sid = _extract_source_and_id(xml)
+        if sid is None:
+            continue
+        if lane == "manga":
+            volume_str = _field(xml, "Volume")
+            try:
+                vnum = int(volume_str) if volume_str else None
+            except ValueError:
+                vnum = None
+            key: tuple = (*sid, vnum)
+        else:
+            key = sid
+        # First-wins; duplicates would mean two files claiming the same
+        # key, which is itself a problem to surface — but rare.
+        index.setdefault(key, cbz)
     return index
 
 
