@@ -57,7 +57,7 @@ from kavita_client import KavitaClient
 from mangabaka_client import MangaBakaClient
 
 
-_VERSION = "0.3.7"
+_VERSION = "0.3.8"
 
 
 # Per-lane file output conventions. The planner produces canonical
@@ -316,6 +316,10 @@ def _override_comicinfo(cbz_path: Path, plan: ItemPlan, lane: str) -> None:
         new_xml = _remove_field(new_xml, "Volume")
         new_xml = _remove_field(new_xml, "Title")
         new_xml = _set_field(new_xml, "Manga", "Yes")
+        if plan.publisher:
+            # Planner has already filtered the MB publishers list to a
+            # usable subset; bypass comictagger's default-pick.
+            new_xml = _set_field(new_xml, "Publisher", plan.publisher)
         new_xml, change = _normalize_manga_publisher(new_xml)
         if change:
             print(f"  normalized publisher: {change[0]!r} → {change[1]!r}")
