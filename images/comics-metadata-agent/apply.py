@@ -57,7 +57,7 @@ from kavita_client import KavitaClient
 from mangabaka_client import MangaBakaClient
 
 
-_VERSION = "0.3.4"
+_VERSION = "0.3.5"
 
 
 # Per-lane file output conventions. The planner produces canonical
@@ -153,7 +153,10 @@ def main(argv: list[str] | None = None) -> int:
             continue
         try:
             dest_folder = _resolve_destination(plan, library_root, kavita, config)
-            _apply_one(src, plan, dest_folder, config["filename_template"], comicvine_key)
+            _apply_one(
+                src, plan, dest_folder,
+                config["filename_template"], comicvine_key, args.lane,
+            )
             _append_applied(applied_log, args.source_id, plan, dest_folder)
             applied_count += 1
             print(
@@ -232,6 +235,7 @@ def _apply_one(
     dest_folder: Path,
     filename_template: str,
     cv_key: str,
+    lane: str,
 ) -> None:
     """1) comictagger save → 2) python override ComicInfo.xml → 3) move.
 
@@ -269,7 +273,7 @@ def _apply_one(
             f"{(write.stderr or write.stdout).strip()[:500]}"
         )
 
-    _override_comicinfo(src, plan)
+    _override_comicinfo(src, plan, lane)
 
     move = subprocess.run(
         [
@@ -296,9 +300,10 @@ def _apply_one(
         )
 
 
-def _override_comicinfo(cbz_path: Path, plan: ItemPlan) -> None:
+def _override_comicinfo(cbz_path: Path, plan: ItemPlan, lane: str) -> None:
     """Rewrite Series/Volume/Number/Title in the just-written ComicInfo.xml
-    to the planner's canonical values. Preserves all other tags + Pages."""
+    to the planner's canonical values. lane=manga drops Volume + stamps
+    Manga=Yes so Kavita treats files as chapters, not Volume <year> + chapter."""
     with zipfile.ZipFile(cbz_path, "r") as zin:
         if "ComicInfo.xml" not in zin.namelist():
             raise RuntimeError(f"no ComicInfo.xml after comictagger save: {cbz_path}")
@@ -306,8 +311,12 @@ def _override_comicinfo(cbz_path: Path, plan: ItemPlan) -> None:
 
     new_xml = xml
     new_xml = _set_field(new_xml, "Series", plan.series)
-    new_xml = _set_field(new_xml, "Volume", str(plan.volume))
     new_xml = _set_field(new_xml, "Number", str(plan.number))
+    if lane == "manga":
+        new_xml = _remove_field(new_xml, "Volume")
+        new_xml = _set_field(new_xml, "Manga", "Yes")
+    else:
+        new_xml = _set_field(new_xml, "Volume", str(plan.volume))
     if plan.title:
         new_xml = _set_field(new_xml, "Title", plan.title)
     if new_xml == xml:
@@ -332,6 +341,12 @@ def _set_field(xml: str, tag: str, value: str) -> str:
     if re.search(rf"<{tag}>[^<]*</{tag}>", xml):
         return re.sub(rf"<{tag}>[^<]*</{tag}>", new_inner, xml, count=1)
     return xml.replace("</ComicInfo>", f"  {new_inner}\n</ComicInfo>")
+
+
+def _remove_field(xml: str, tag: str) -> str:
+    """Strip a top-level <Tag>...</Tag> entry plus its trailing whitespace.
+    No-op if absent."""
+    return re.sub(rf"\s*<{tag}>[^<]*</{tag}>", "", xml, count=1)
 
 
 # ---- applied log -------------------------------------------------------

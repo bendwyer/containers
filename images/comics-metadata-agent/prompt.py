@@ -100,18 +100,28 @@ match" only when ALL of: \
   (e) the file's structure aligns with MangaBaka's data unit. MangaBaka \
       models the original Japanese chapter-series; ComicVine often models \
       the Western licensee's volume releases (Dark Horse Manga, VIZ Media, \
-      Yen Press, Kodansha USA, Seven Seas, Tokyopop, Vertical, etc.). When \
-      the source's inferred_publisher names a Western manga licensee, OR \
-      MangaBaka's candidate has chapter-based structure (count_of_issues / \
-      total_chapters in the dozens-to-hundreds) but the filename pattern \
-      implies discrete volumes ("Vol 1", "Vol 2"), prefer ComicVine. The \
-      file's volume structure won't map onto MB's chapter records. \
+      Yen Press, Kodansha USA, Seven Seas, Tokyopop, Vertical, Abrams \
+      ComicArts/Kana, etc.). When the source's inferred_publisher names a \
+      Western manga licensee, OR MangaBaka's candidate has chapter-based \
+      structure (count_of_issues / total_chapters in the dozens-to-hundreds) \
+      but the filename implies discrete volumes ("Vol 1", "Vol 2"), prefer \
+      ComicVine — but only if CV has a candidate matching the source's \
+      licensee or language. \
 
-If no MangaBaka candidate satisfies (a)–(e), fall back to ComicVine. The \
-common falls-to-CV cases for kobo: omnibuses (rule d) and Dark Horse / \
-VIZ / Yen Press licensed editions of older Japanese manga where CV has \
-indexed the Western volume releases (rule e — Lone Wolf and Cub, Lady \
-Snowblood, Crying Freeman, etc.). \
+Resolution order for lane=manga: \
+  1. MangaBaka if a candidate satisfies all of (a)–(e). \
+  2. Else ComicVine if it has a candidate matching the source's licensee \
+     or language. \
+  3. Else MangaBaka if any candidate satisfies (a)–(d) — when CV has only \
+     foreign-language editions or no entry at all, MB's original-language \
+     record is the right series anchor; the underlying work is the same. \
+     Never pick a wrong-language CV edition just to record an id. \
+  4. Else uncertain. \
+
+Examples: omnibuses fall to CV (rule d). Dark Horse / VIZ / Yen Press \
+licensed editions of older Japanese manga land on CV (rule e — Lone Wolf \
+and Cub, Lady Snowblood, Crying Freeman). Recent Abrams/Kana English \
+editions where CV has only DE/IT/ES entries land on MB via step 3. \
 
 When recording the decision, set the `source` field to the service whose \
 id you're recording: "comicvine" or "mangabaka". For MangaBaka, use the \
