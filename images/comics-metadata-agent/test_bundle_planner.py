@@ -453,6 +453,18 @@ class FilterMbPublishersTests(unittest.TestCase):
         ]}
         self.assertEqual(_filter_mb_publishers(vol), "Kana (US)")
 
+    def test_keeps_abbreviated_vols_in_note(self):
+        # BAA: Mars Chronicle shape: Kodansha Manga's note uses "Vols"
+        # abbreviation rather than "Volumes". Filter must catch both.
+        vol = {"publishers": [
+            {"name": "Omoi", "type": "English", "note": "digital"},
+            {"name": "INKR Comics", "type": "English", "note": None},
+            {"name": "Kodansha", "type": "Original", "note": ""},
+            {"name": "Kodansha Manga", "type": "English",
+             "note": "11 Vols - Complete"},
+        ]}
+        self.assertEqual(_filter_mb_publishers(vol), "Kodansha Manga")
+
 
 class IssueYearTests(unittest.TestCase):
     def test_extracts_from_cover_date(self):

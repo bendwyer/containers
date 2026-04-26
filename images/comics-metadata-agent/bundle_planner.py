@@ -290,7 +290,10 @@ def _plan_group(
     return plans
 
 
-_NOTE_VOLUMES_RE = re.compile(r"\bvolumes?\b", re.IGNORECASE)
+# Matches Volume / Volumes / Vol / Vols (case-insensitive). MB notes
+# use both forms — observed: "9 Volumes - Complete" (BAA #1) vs
+# "11 Vols - Complete" (BAA: Mars Chronicle).
+_NOTE_VOLUMES_RE = re.compile(r"\bvol(?:ume)?s?\b", re.IGNORECASE)
 
 
 def _filter_mb_publishers(volume: dict[str, Any]) -> str | None:
