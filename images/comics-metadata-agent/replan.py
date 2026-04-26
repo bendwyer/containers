@@ -58,7 +58,7 @@ from kavita_client import KavitaClient
 from mangabaka_client import MangaBakaClient
 
 
-_VERSION = "0.3.4"
+_VERSION = "0.3.5"
 
 
 # ID is embedded in <Web> (most reliable) and <Notes> (fallback). Source is

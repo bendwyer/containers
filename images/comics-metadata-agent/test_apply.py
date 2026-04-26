@@ -166,7 +166,7 @@ class OverrideComicInfoTests(unittest.TestCase):
                 series="C.O.W.L.", volume=2014, number=2,
                 title="Volume 2: The Greater Good", year=2015,
             )
-            _override_comicinfo(cbz, plan)
+            _override_comicinfo(cbz, plan, "comics")
 
             with zipfile.ZipFile(cbz, "r") as z:
                 got = z.read("ComicInfo.xml").decode("utf-8")
@@ -186,7 +186,7 @@ class OverrideComicInfoTests(unittest.TestCase):
                 filename=cbz.name, issue_id=1, volume_id=1,
                 series="X", volume=2020, number=1, title="", year=2020,
             )
-            _override_comicinfo(cbz, plan)
+            _override_comicinfo(cbz, plan, "comics")
             with zipfile.ZipFile(cbz, "r") as z:
                 got = z.read("ComicInfo.xml").decode("utf-8")
             self.assertIn("<Title>Keep me</Title>", got)
@@ -202,7 +202,7 @@ class OverrideComicInfoTests(unittest.TestCase):
                 series="X", volume=2020, number=1, title="", year=2020,
             )
             with self.assertRaises(RuntimeError):
-                _override_comicinfo(cbz, plan)
+                _override_comicinfo(cbz, plan, "comics")
 
 
 class AppliedLogTests(unittest.TestCase):
