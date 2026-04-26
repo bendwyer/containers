@@ -57,7 +57,7 @@ from kavita_client import KavitaClient
 from mangabaka_client import MangaBakaClient
 
 
-_VERSION = "0.3.11"
+_VERSION = "0.3.12"
 
 
 # Per-lane file output conventions. The planner produces canonical
@@ -69,9 +69,13 @@ LANE_CONFIG: dict[str, dict[str, Any]] = {
         "folder_with_year": True,
     },
     "manga": {
-        # `v{issue}` so Kavita's filename parser detects each file as a
-        # volume rather than a chapter. ComicInfo <Volume> reinforces this.
-        "filename_template": "{series} v{issue} ({year})",
+        # `v{volume:>03}` reads ComicInfo's <Volume> (planner sets this
+        # to the volume number) and zero-pads to 3 digits so files sort
+        # correctly past v9. comictagger auto-pads {issue} internally
+        # but not {volume}, hence the explicit format spec. {issue}
+        # would read <Number>, which manga lane removes for Kavita-
+        # volume-display correctness.
+        "filename_template": "{series} v{volume:>03} ({year})",
         "folder_with_year": False,
     },
 }
