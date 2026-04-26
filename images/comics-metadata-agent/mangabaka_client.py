@@ -10,8 +10,12 @@ the agent's perspective. Per-volume issue numbers come from the source
 filename (handled later by comictagger -f); they're not in MangaBaka.
 
 Endpoints (api.mangabaka.dev/v1/):
-  - GET /series/search?title=<q>&page=&limit= → {pagination, data: [series]}
-  - GET /series/<id>                          → {data: series}
+  - GET /series/search?q=<q>&page=&limit= → {pagination, data: [series]}
+  - GET /series/<id>                      → {data: series}
+
+API quirk: the search query param is `q`. Older code (and an early read of
+their docs) sent `title=`; the API now rejects that with HTTP 400 +
+`{"message":"Validation error: Unrecognized key: \"title\""}`.
 
 Rate limit: 60/min — generous, won't bite at our cadence. No auth required.
 """
@@ -70,7 +74,7 @@ class MangaBakaClient:
         while page <= max_pages:
             body = self._request(
                 "series/search",
-                title=title,
+                q=title,
                 page=page,
                 limit=50,
             )
