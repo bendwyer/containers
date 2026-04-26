@@ -290,16 +290,18 @@ def _plan_group(
     return plans
 
 
-def _filter_mb_publishers(volume: dict[str, Any]) -> str | None:
-    """For MB records: filter the full publishers list to entries that are
-    type=English with a meaningful note (non-null, not "digital"); join the
-    survivors comma-separated. Returns None when nothing survives — caller
-    falls back to comictagger's default Publisher write.
+_NOTE_VOLUMES_RE = re.compile(r"\bvolumes?\b", re.IGNORECASE)
 
-    The note check excludes platforms (e.g., MB tags `Omoi` as note=digital)
-    and unannotated entries (note=null on aggregator-style listings); real
-    licensees consistently carry notes describing volume counts or release
-    years.
+
+def _filter_mb_publishers(volume: dict[str, Any]) -> str | None:
+    """For MB records: filter publishers to type=English entries whose
+    note mentions "Volume" / "Volumes". Join survivors comma-separated;
+    None when nothing survives so the caller falls back to comictagger.
+
+    Print licensees consistently include a volume count in the note
+    (e.g., "9 Volumes - Complete", "24 Volumes - Ongoing; digital").
+    Distribution platforms / cancelled entries either lack a note,
+    track chapters instead, or carry status-only notes — all dropped.
     """
     raw = volume.get("publishers")
     if not isinstance(raw, list):
@@ -310,8 +312,8 @@ def _filter_mb_publishers(volume: dict[str, Any]) -> str | None:
             continue
         if (p.get("type") or "").strip().lower() != "english":
             continue
-        note = (p.get("note") or "").strip().lower()
-        if not note or note == "digital":
+        note = (p.get("note") or "").strip()
+        if not note or not _NOTE_VOLUMES_RE.search(note):
             continue
         name = (p.get("name") or "").strip()
         if name and name not in survivors:

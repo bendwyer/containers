@@ -204,6 +204,39 @@ class OverrideComicInfoTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 _override_comicinfo(cbz, plan, "comics")
 
+    def test_manga_lane_writes_volume_drops_number_and_title(self):
+        # Manga: Kavita reads <Volume> for volume display; <Number> would
+        # show as a chapter sub-unit, which we don't want for whole-volume
+        # files. Title is suppressed regardless.
+        with tempfile.TemporaryDirectory() as td:
+            td_path = Path(td)
+            xml = (
+                "<?xml version='1.0'?>\n"
+                "<ComicInfo>"
+                "<Series>Old</Series>"
+                "<Volume>2024</Volume>"
+                "<Number>1</Number>"
+                "<Title>Volume 1</Title>"
+                "</ComicInfo>"
+            )
+            cbz = self._make_cbz(td_path, xml)
+            plan = ItemPlan(
+                filename=cbz.name, issue_id=139, volume_id=139,
+                series="Shangri-La Frontier", volume=2020, number=1,
+                title="Volume 1", year=2020,
+                source="mangabaka", publisher="Kodansha Manga",
+            )
+            _override_comicinfo(cbz, plan, "manga")
+
+            with zipfile.ZipFile(cbz, "r") as z:
+                got = z.read("ComicInfo.xml").decode("utf-8")
+            self.assertIn("<Series>Shangri-La Frontier</Series>", got)
+            self.assertIn("<Volume>1</Volume>", got)
+            self.assertNotIn("<Number>", got)
+            self.assertNotIn("<Title>", got)
+            self.assertIn("<Manga>Yes</Manga>", got)
+            self.assertIn("<Publisher>Kodansha Manga</Publisher>", got)
+
 
 class AppliedLogTests(unittest.TestCase):
     def test_append_records_planner_fields(self):

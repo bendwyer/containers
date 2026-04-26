@@ -429,6 +429,30 @@ class FilterMbPublishersTests(unittest.TestCase):
         self.assertIsNone(_filter_mb_publishers({}))
         self.assertIsNone(_filter_mb_publishers({"publishers": None}))
 
+    def test_drops_digital_substring_and_chapters_only_notes(self):
+        # Shangri-La Frontier shape: notes carry "Digital" as substring
+        # (not as exact value), and K Manga tracks chapters not volumes.
+        # Only Kodansha Manga's note mentions "Volumes".
+        vol = {"publishers": [
+            {"name": "Omoi", "type": "English", "note": "Digital - Cancelled"},
+            {"name": "INKR Comics", "type": "English",
+             "note": "Digital - Cancelled"},
+            {"name": "K Manga", "type": "English",
+             "note": "260 Chapters - Ongoing; Digital"},
+            {"name": "Kodansha", "type": "Original", "note": ""},
+            {"name": "Kodansha Manga", "type": "English",
+             "note": "24 Volumes - Ongoing; digital"},
+        ]}
+        self.assertEqual(_filter_mb_publishers(vol), "Kodansha Manga")
+
+    def test_keeps_singular_volume_in_note(self):
+        # Manhole-style: "3 Volume; Complete" — singular form must match.
+        vol = {"publishers": [
+            {"name": "Kana (US)", "type": "English",
+             "note": "3 Volume; Complete"},
+        ]}
+        self.assertEqual(_filter_mb_publishers(vol), "Kana (US)")
+
 
 class IssueYearTests(unittest.TestCase):
     def test_extracts_from_cover_date(self):
