@@ -115,7 +115,7 @@ class SearchTests(unittest.TestCase):
         url = session.get.call_args.args[0]
         self.assertEqual(url, "https://api.mangabaka.dev/v1/series/search")
         params = session.get.call_args.kwargs["params"]
-        self.assertEqual(params["title"], "foo")
+        self.assertEqual(params["q"], "foo")
         self.assertEqual(params["limit"], 50)
 
 
