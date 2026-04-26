@@ -57,7 +57,7 @@ from kavita_client import KavitaClient
 from mangabaka_client import MangaBakaClient
 
 
-_VERSION = "0.3.6"
+_VERSION = "0.3.7"
 
 
 # Per-lane file output conventions. The planner produces canonical
@@ -124,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
         comicvine_key, user_agent=f"comics-metadata-agent-apply/{_VERSION}"
     )
     mb = MangaBakaClient(user_agent=f"comics-metadata-agent-apply/{_VERSION}")
-    plans = plan_bundle(eligible, cv, mb)
+    plans = plan_bundle(eligible, cv, mb, lane=args.lane)
 
     applied_set = {r["filename"] for r in _read_jsonl(applied_log)}
     todo = [p for p in plans if p.filename not in applied_set]

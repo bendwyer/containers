@@ -312,6 +312,35 @@ class CanonicalNameTests(unittest.TestCase):
         ]
         self.assertEqual(_canonical_series_name(items), "C.O.W.L.")
 
+    def test_manga_lane_preserves_colon_for_cv_source(self):
+        # CV-matched manga (omnibus fallback path) — colon suffix is part
+        # of edition identity, not a TPB subtitle. e.g., BAA: Last Order
+        # Omnibus on CV is its own series, not a TPB of "Battle Angel Alita".
+        items = [
+            {
+                "source": "comicvine",
+                "cv_volume": make_volume(
+                    1, "Battle Angel Alita: Last Order Omnibus", 2013,
+                ),
+            },
+        ]
+        self.assertEqual(
+            _canonical_series_name(items, lane="manga"),
+            "Battle Angel Alita: Last Order Omnibus",
+        )
+
+    def test_comics_lane_unchanged_for_cv_source(self):
+        items = [
+            {
+                "source": "comicvine",
+                "cv_volume": make_volume(1, "C.O.W.L.: Principles of Power", 2014),
+            },
+        ]
+        self.assertEqual(
+            _canonical_series_name(items, lane="comics"),
+            "C.O.W.L.",
+        )
+
     def test_canonical_volume_uses_earliest(self):
         items = [
             {"cv_volume": make_volume(1, "Foo", 2025)},

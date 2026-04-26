@@ -56,22 +56,20 @@ def plan_bundle(
     decisions: list[dict[str, Any]],
     cv_client,
     mb_client=None,
+    lane: str = "comics",
 ) -> list[ItemPlan]:
     """Return a per-item plan for every match decision.
 
-    `decisions` is the parsed `<source_id>.jsonl`. Only `decision == "match"`
-    entries are processed; uncertain decisions are dropped (caller handles).
-
-    `cv_client` is required (most decisions are ComicVine-sourced).
-    `mb_client` is optional; required only when any decision has
-    `source=="mangabaka"`. Callers without manga decisions can omit it.
-    """
+    `lane` governs name canonicalization: comics treats CV "Series:
+    Subtitle" as a TPB pattern (subtitle moves to Title); manga preserves
+    the full name (the colon suffix is part of edition identity, e.g.
+    "Battle Angel Alita: Last Order Omnibus")."""
     matches = [d for d in decisions if d.get("decision") == "match"]
     items = _hydrate(matches, cv_client, mb_client)
     groups = _group(items)
     plans: list[ItemPlan] = []
     for group in groups:
-        plans.extend(_plan_group(group))
+        plans.extend(_plan_group(group, lane=lane))
     return plans
 
 
@@ -205,9 +203,12 @@ def _start_year(item: dict[str, Any]) -> int | None:
 # ---- phase 3: plan ------------------------------------------------------
 
 
-def _plan_group(group: list[dict[str, Any]]) -> list[ItemPlan]:
+def _plan_group(
+    group: list[dict[str, Any]],
+    lane: str = "comics",
+) -> list[ItemPlan]:
     """Compute canonical metadata for every item in a group."""
-    canonical_series = _canonical_series_name(group)
+    canonical_series = _canonical_series_name(group, lane=lane)
     canonical_volume = _canonical_volume_year(group)
 
     # Stable order for number assignment: by start_year, then issue_number.
@@ -278,19 +279,23 @@ def _plan_group(group: list[dict[str, Any]]) -> list[ItemPlan]:
     return plans
 
 
-def _canonical_series_name(group: list[dict[str, Any]]) -> str:
+def _canonical_series_name(
+    group: list[dict[str, Any]],
+    lane: str = "comics",
+) -> str:
     """Most common base name across the group; ties broken by first occurrence.
 
-    For ComicVine, splits on `:` so TPB-style names ("Series: Subtitle")
-    yield the bare series and the subtitle becomes a Title. For MangaBaka,
-    the colon denotes a distinct series — "Battle Angel Alita: Last Order"
-    is a different work from "Battle Angel Alita" — so the full name is
-    preserved verbatim.
+    Comics lane / CV: splits on `:` so TPB-style names ("Series: Subtitle")
+    yield the bare series, with subtitle going to Title. Manga lane (any
+    source) and MangaBaka source: preserves the full name — the colon
+    denotes a distinct edition or series ("Battle Angel Alita: Last Order
+    Omnibus" is its own shelving unit, not a TPB of "Battle Angel Alita").
     """
     bases = []
     for it in group:
         name = (it["cv_volume"].get("name") or "").strip()
-        if (it.get("source") or DEFAULT_SOURCE) == "mangabaka":
+        source = it.get("source") or DEFAULT_SOURCE
+        if lane == "manga" or source == "mangabaka":
             bases.append(name)
         else:
             bases.append(name.split(":", 1)[0].strip())
