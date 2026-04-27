@@ -48,6 +48,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from xml.sax.saxutils import escape as _xml_escape
 
 import requests
 
@@ -57,7 +58,7 @@ from kavita_client import KavitaClient
 from mangabaka_client import MangaBakaClient
 
 
-_VERSION = "0.3.15"
+_VERSION = "0.3.16"
 
 
 # Per-lane file output conventions. The planner produces canonical
@@ -355,7 +356,12 @@ def _override_comicinfo(cbz_path: Path, plan: ItemPlan, lane: str) -> None:
 
 
 def _set_field(xml: str, tag: str, value: str) -> str:
-    new_inner = f"<{tag}>{value}</{tag}>"
+    # Escape XML-significant characters in the value. MangaBaka publisher
+    # joins like "Creek & River Co., Ltd, Dark Horse Manga" otherwise emit
+    # a raw `&`, which makes comictagger's read step fail with "Can't
+    # rename without series name" because comicapi's parser silently drops
+    # all metadata on ParseError.
+    new_inner = f"<{tag}>{_xml_escape(value)}</{tag}>"
     if re.search(rf"<{tag}>[^<]*</{tag}>", xml):
         return re.sub(rf"<{tag}>[^<]*</{tag}>", new_inner, xml, count=1)
     return xml.replace("</ComicInfo>", f"  {new_inner}\n</ComicInfo>")
