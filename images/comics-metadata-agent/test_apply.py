@@ -139,6 +139,20 @@ class SetFieldTests(unittest.TestCase):
             "<r><Series>X</Series><Series>B</Series></r>",
         )
 
+    def test_escapes_xml_significant_characters(self):
+        # Regression: MangaBaka publisher joins like
+        # "Creek & River Co., Ltd, Dark Horse Manga" otherwise emit a raw
+        # `&` in <Publisher>, which makes the comictagger -r read step fail
+        # because comicapi's parser drops all metadata on ParseError. The
+        # rewritten XML must round-trip cleanly through ElementTree.
+        import xml.etree.ElementTree as ET
+        xml = "<ComicInfo><Publisher>Old</Publisher></ComicInfo>"
+        result = _set_field(xml, "Publisher", "Creek & River Co., Ltd")
+        self.assertIn(
+            "<Publisher>Creek &amp; River Co., Ltd</Publisher>", result
+        )
+        ET.fromstring(result)  # raises ParseError if escaping is wrong
+
 
 class OverrideComicInfoTests(unittest.TestCase):
     def _make_cbz(self, td: Path, xml: str) -> Path:
