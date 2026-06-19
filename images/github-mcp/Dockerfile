@@ -1,7 +1,7 @@
 ARG OWNER=github
 ARG BINARY=github-mcp-server
 
-FROM alpine:3.23 AS build
+FROM alpine:3.24 AS build
 
 ARG OWNER
 ARG BINARY
