@@ -11,6 +11,12 @@ on:
       - "images/**/requirements.txt"
       - "images/**/*.py"
       - "images/**/*.patch"
+      # Source-built images gate their tests in the Docker build, so a PR that
+      # only touches their sources must still trigger CI.
+      - "images/**/*.ts"
+      - "images/**/*.js"
+      - "images/**/*.json"
+      - "images/**/*.sql"
   push:
     branches:
       - main
