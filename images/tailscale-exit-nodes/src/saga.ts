@@ -142,7 +142,7 @@ const defaultSleep = (ms: number): Promise<void> =>
 
 /**
  * Run the full provisioning saga: mint a key, create the instance, record its
- * handles, lock the firewall (AWS), poll for readiness, then mark active. Any
+ * handles, poll for readiness, lock the firewall (AWS), then mark active. Any
  * failure is recorded on the row as `failed` (the reaper reconciles it) and
  * swallowed — the saga runs detached, so there is no caller to throw to.
  */
@@ -163,10 +163,6 @@ export async function provisionSaga(
     // it even if a later step fails.
     await db.updateInstanceRefs(params.deploymentId, refs.instanceRef, refs.firewallRef);
 
-    if (params.provider === 'aws') {
-      await lockLightsailFirewall(creds, refs.instanceRef, params.providerRegion);
-    }
-
     let publicIp: string | null = null;
     for (let attempt = 1; attempt <= pollAttempts; attempt++) {
       publicIp = await checkInstanceReady(creds, params, refs.instanceRef);
@@ -175,6 +171,13 @@ export async function provisionSaga(
     }
     if (!publicIp) {
       throw new Error(`instance ${refs.instanceRef} did not become ready in time`);
+    }
+
+    // AWS only: lock the public firewall to UDP 41641. This MUST run after the
+    // instance is `running` — Lightsail rejects PutInstancePublicPorts while the
+    // instance is still in transition (pending). Vultr locks down at create time.
+    if (params.provider === 'aws') {
+      await lockLightsailFirewall(creds, refs.instanceRef, params.providerRegion);
     }
 
     await db.markActive(params.deploymentId, publicIp);
