@@ -5,6 +5,7 @@ import type { Db } from './db.js';
 import type { Regions } from './regions.js';
 import type { ProvisionParams } from './saga.js';
 import type { PruneSummary } from './reaper.js';
+import type { MetricsRenderer } from './metrics.js';
 
 // HTTP entry (Hono), ported from the retired raw Worker handler. The cloud
 // clients, DB, catalog, saga kickoff, and reaper are injected via ServerDeps so
@@ -34,6 +35,8 @@ export interface ServerDeps {
   startSaga: (params: ProvisionParams) => void;
   /** Run one reaper sweep (the on-demand twin of the periodic sweep). */
   runPrune: () => Promise<PruneSummary>;
+  /** Renders the Prometheus exposition served at GET /metrics. */
+  metrics: MetricsRenderer;
 }
 
 export function createApp(deps: ServerDeps): Hono {
@@ -117,6 +120,15 @@ export function createApp(deps: ServerDeps): Hono {
 
   app.get('/regions', async (c) => {
     return c.json(await deps.regions.getCatalog());
+  });
+
+  // Prometheus exposition. Ledger gauges are rebuilt from a fresh DB snapshot on
+  // each scrape; reaper counters accumulate over the process lifetime. Scraped
+  // by the cluster collector — no auth, consistent with the rest of this
+  // in-cluster-only API.
+  app.get('/metrics', async (c) => {
+    const body = await deps.metrics.render();
+    return c.text(body, 200, { 'content-type': deps.metrics.contentType });
   });
 
   // On-demand twin of the reaper's periodic sweep — same reconciliation,

@@ -48,6 +48,10 @@ function harness(overrides: Partial<ServerDeps> = {}): Harness {
     regions,
     startSaga,
     runPrune: async () => EMPTY_SUMMARY,
+    metrics: {
+      contentType: 'text/plain; version=0.0.4; charset=utf-8',
+      render: async () => '# stub\n',
+    },
     ...overrides,
   };
 
@@ -173,5 +177,15 @@ describe('POST /prune', () => {
     const res = await app.request('/prune', { method: 'POST' });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual(EMPTY_SUMMARY);
+  });
+});
+
+describe('GET /metrics', () => {
+  it('serves the rendered exposition with the metrics content type', async () => {
+    const { app } = harness();
+    const res = await app.request('/metrics');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/plain');
+    expect(await res.text()).toContain('# stub');
   });
 });
