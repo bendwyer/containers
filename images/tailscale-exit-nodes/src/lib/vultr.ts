@@ -39,7 +39,7 @@ export interface CreateVultrInstanceInput {
   region: string;
   label: string;
   hostname: string;
-  /** Rendered cloud-init script (raw text — base64-encoded internally; Vultr requires it). */
+  /** Rendered cloud-init script (raw text, base64-encoded internally; Vultr requires it). */
   userData: string;
   firewallGroupId: string;
   /** Tags the Reaper sweeps by, e.g. `['exit-node', deploymentId]`. */

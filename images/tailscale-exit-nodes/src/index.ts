@@ -8,9 +8,9 @@ import { createRegions } from './regions.js';
 import { provisionSaga } from './saga.js';
 import { createApp } from './server.js';
 
-// Entry point: load config -> connect Postgres -> migrate -> startup-reconcile ->
-// serve the API -> start the reaper sweep. Logs go to stdout; Prometheus metrics
-// are exposed at GET /metrics (scraped by the cluster collector); no log shipping.
+// Entry point: load config, connect to Postgres, run migrations, reconcile any
+// half-finished work, serve the API, and start the reaper. Logs go to stdout;
+// Prometheus metrics are at GET /metrics.
 
 // BIGINT (int8, oid 20) arrives from node-pg as a string by default; coerce to
 // number. created_at/expires_at are unix-ms, well within Number.MAX_SAFE_INTEGER.
@@ -31,9 +31,9 @@ async function main(): Promise<void> {
   const deps = { creds: config.cloud, db };
   const metrics = createMetrics(db);
 
-  // One sweep-and-record path shared by the periodic reaper and the on-demand
-  // /prune route. The periodic sweep logs its summary (as before); the manual
-  // prune is logged by the route handler.
+  // Run one reaper sweep and record its metrics. Shared by the periodic reaper
+  // and the /prune route so both report the same counters. The periodic sweep
+  // logs its summary; the manual prune is logged by the route handler.
   const runSweep = async (trigger: 'periodic' | 'manual'): Promise<PruneSummary> => {
     const start = Date.now();
     try {

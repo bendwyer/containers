@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import { AWS_REGION_CITIES, BAKED_CATALOG } from './aws-regions.js';
 
-// Regions catalog: generated at runtime from live provider data and
-// cached in memory, replacing the retired curated-JSON + KV publish. A slug maps
-// to its display string, cloud provider, and that cloud's native region code.
-// `GET /regions` serves the cache; `POST /deploy` validates the slug against it.
+// Regions catalog: built at runtime from live provider data and cached in
+// memory. A slug maps to its display name, cloud provider, and that cloud's
+// native region code. GET /regions serves the cache; POST /deploy validates a
+// slug against it.
 
 export const RegionEntrySchema = z.object({
   display: z.string(),
@@ -60,7 +60,7 @@ export async function fetchAwsRegionCodes(): Promise<string[]> {
   return Object.values(regions).map((r) => r.regionCode);
 }
 
-/** Strip diacritics to ASCII (`São Paulo` -> `Sao Paulo`), matching the ASCII-only convention. */
+/** Strip diacritics to plain ASCII (accented letters become unaccented), matching the ASCII-only convention. */
 export function asciiFold(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
@@ -75,9 +75,9 @@ export function slugify(value: string): string {
 
 /**
  * Build the slug->entry catalog from live provider data. AWS is added first so
- * it wins on a city served by both clouds (decision 1b); Vultr fills the rest.
- * Unmapped but genuine AWS codes are still listed with a raw-code display so
- * nothing is silently dropped. Keys are emitted sorted for a stable response.
+ * it wins for a city served by both clouds; Vultr fills in the rest. Genuine AWS
+ * codes with no city mapping are still listed (with the raw code as the display)
+ * so nothing is silently dropped. Keys are sorted for a stable response.
  */
 export function buildCatalog(vultr: VultrRegion[], awsCodes: string[]): RegionsCatalog {
   const catalog: RegionsCatalog = {};

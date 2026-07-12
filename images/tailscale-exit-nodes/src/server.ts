@@ -7,10 +7,9 @@ import type { ProvisionParams } from './saga.js';
 import type { PruneSummary } from './reaper.js';
 import type { MetricsRenderer } from './metrics.js';
 
-// HTTP entry (Hono), ported from the retired raw Worker handler. The cloud
-// clients, DB, catalog, saga kickoff, and reaper are injected via ServerDeps so
-// the routes stay thin and the app is testable with app.request() — no server,
-// no real DB, no cloud calls.
+// HTTP routes (Hono). Dependencies (database, region catalog, saga kickoff,
+// reaper) are injected via ServerDeps, so the routes stay thin and can be tested
+// with app.request() without a real server, database, or cloud calls.
 
 // TTL is required and capped at 30 days; the reaper destroys a node once its
 // expires_at has passed.
@@ -122,16 +121,13 @@ export function createApp(deps: ServerDeps): Hono {
     return c.json(await deps.regions.getCatalog());
   });
 
-  // Prometheus exposition. Ledger gauges are rebuilt from a fresh DB snapshot on
-  // each scrape; reaper counters accumulate over the process lifetime. Scraped
-  // by the cluster collector — no auth, consistent with the rest of this
-  // in-cluster-only API.
+  // Prometheus metrics. No auth, like the rest of this internal API.
   app.get('/metrics', async (c) => {
     const body = await deps.metrics.render();
     return c.text(body, 200, { 'content-type': deps.metrics.contentType });
   });
 
-  // On-demand twin of the reaper's periodic sweep — same reconciliation,
+  // On-demand twin of the reaper's periodic sweep, same reconciliation,
   // triggered by hand instead of waiting for the next tick.
   app.post('/prune', async (c) => {
     const summary = await deps.runPrune();

@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 // Thin AWS Lightsail client for exit-node provisioning. Uses the Lightsail
 // JSON API (`X-Amz-Target: Lightsail_20161128.<Action>`) over SigV4 via
-// aws4fetch — region and service are inferred from the regional endpoint host.
+// aws4fetch; region and service are inferred from the regional endpoint host.
 
 const API_VERSION = 'Lightsail_20161128';
 
@@ -41,7 +41,7 @@ export interface CreateLightsailInstanceInput {
   region: string;
   /** Instance name; also used by the Reaper to look the instance back up. */
   name: string;
-  /** Rendered cloud-init script (plain text — Lightsail does NOT base64 it). */
+  /** Rendered cloud-init script (plain text; Lightsail does NOT base64 it). */
   userData: string;
   /** Tags the Reaper sweeps by, e.g. `[{key:'exit-node'}, {key:'deployment_id', value}]`. */
   tags?: LightsailTag[];

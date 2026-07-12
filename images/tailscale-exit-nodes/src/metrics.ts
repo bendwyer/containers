@@ -3,20 +3,18 @@ import type { Db } from './db.js';
 import type { Provider } from './lib/reaper-core.js';
 import type { PruneSummary } from './reaper.js';
 
-// Prometheus metrics for the control plane. Two families:
-//   - ledger gauges, rebuilt from the DB on each scrape (current state), so a
-//     terminal node's series drops out on the next scrape rather than going
-//     stale; and
-//   - reaper counters, accumulated over the process lifetime from each sweep.
-// The GET /metrics route calls render(); the reaper and the on-demand /prune
-// route call recordSweep()/recordSweepError(). Metric names are Prometheus-
-// native so a collector scrapes them with no OTLP name/unit translation.
+// Prometheus metrics for the control plane, in two groups:
+//   - gauges for current state, rebuilt from the database on every scrape so a
+//     deleted node stops being reported; and
+//   - counters for reaper activity, which add up over the life of the process.
+// render() serves GET /metrics; recordSweep()/recordSweepError() are called
+// after each reaper sweep.
 
 export type SweepTrigger = 'periodic' | 'manual';
 
-// Emit a zeroed leak series per provider so exit_node_expired_active always
-// exists to alert on, even when nothing has leaked. Typed against Provider so a
-// new provider is a compile error here.
+// Report a value for every provider (even 0) so exit_node_expired_active always
+// exists to alert on. Typed as Provider so adding a provider fails to compile
+// until this list is updated.
 const PROVIDERS: readonly Provider[] = ['aws', 'vultr'];
 
 /** The slice of the metrics object the HTTP layer needs to serve GET /metrics. */

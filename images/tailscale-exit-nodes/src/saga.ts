@@ -6,17 +6,16 @@ import { lightsailExitNodeTags, vultrExitNodeTags, type Provider } from './lib/r
 import { tailscale } from './lib/tailscale.js';
 import { vultr } from './lib/vultr.js';
 
-// Provisioning saga: ported from the retired durable Workflow to a plain async
-// function (the CF Workflow `step.do`/`step.sleep` durability is stripped). Each
-// step is a standalone, unit-testable function; provisionSaga wires them in
-// order and records terminal state on the deployments row. It runs detached from
-// POST /deploy (fire-and-forget) — failures land as a `failed` row, not a throw.
+// Provisioning saga. Each step is a standalone, unit-testable function;
+// provisionSaga runs them in order and records the final state on the deployment
+// row. It runs detached from POST /deploy (fire-and-forget), so a failure is
+// recorded as a `failed` row rather than thrown.
 
 // The Tailscale ACL tag every cloud exit node advertises and every minted key
 // is scoped to. Distinct from any other exit nodes on the tailnet so the OAuth
 // client's blast radius is limited to these cloud-provisioned nodes.
 const CLOUD_EXIT_NODE_TAG = 'tag:cloud-exit-node';
-// Ephemeral key lifetime — only needs to outlive first boot + `tailscale up`.
+// Ephemeral key lifetime; only needs to outlive first boot + `tailscale up`.
 const KEY_EXPIRY_SECONDS = 600;
 // Readiness polling: up to ~5 minutes for the instance to boot and get an IP.
 const READY_POLL_ATTEMPTS = 20;
@@ -144,7 +143,7 @@ const defaultSleep = (ms: number): Promise<void> =>
  * Run the full provisioning saga: mint a key, create the instance, record its
  * handles, poll for readiness, lock the firewall (AWS), then mark active. Any
  * failure is recorded on the row as `failed` (the reaper reconciles it) and
- * swallowed — the saga runs detached, so there is no caller to throw to.
+ * swallowed; the saga runs detached, so there is no caller to throw to.
  */
 export async function provisionSaga(
   deps: { creds: CloudCreds; db: Db },
@@ -174,7 +173,7 @@ export async function provisionSaga(
     }
 
     // AWS only: lock the public firewall to UDP 41641. This MUST run after the
-    // instance is `running` — Lightsail rejects PutInstancePublicPorts while the
+    // instance is `running`; Lightsail rejects PutInstancePublicPorts while the
     // instance is still in transition (pending). Vultr locks down at create time.
     if (params.provider === 'aws') {
       await lockLightsailFirewall(creds, refs.instanceRef, params.providerRegion);

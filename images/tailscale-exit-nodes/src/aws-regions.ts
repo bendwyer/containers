@@ -1,10 +1,9 @@
 import type { RegionsCatalog } from './regions.js';
 
-// AWS Lightsail's region index publishes region *codes* only, so the friendly
-// name for each code comes from this static map (seeded from the retired curated
-// catalog's AWS rows). AWS geography is immutable and new regions land ~1-2x/yr,
-// so this drifts slowly; an unmapped live code is still surfaced (see regions.ts)
-// rather than silently dropped. Display strings are ASCII, "CC - City".
+// AWS Lightsail's region index only publishes region codes, so this static map
+// supplies a friendly name for each. New AWS regions are rare, so it drifts
+// slowly; an unmapped live code is still surfaced (see regions.ts) rather than
+// dropped. Display strings are ASCII, "CC - City".
 export const AWS_REGION_CITIES: Record<string, { city: string; country: string }> = {
   'us-east-1': { city: 'Virginia', country: 'US' },
   'us-east-2': { city: 'Ohio', country: 'US' },

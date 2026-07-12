@@ -1,13 +1,8 @@
-// Renders the exit-node cloud-init bootstrap script as a flat POSIX `sh`
-// user_data script (installs Tailscale, authenticates with a fresh ephemeral
-// key, advertises the host as an exit node).
-//
-// Ported verbatim from the retired terraform-tailscale-exit-node-cloudinit
-// module (see reference/exit-node-provisioning/cloud-init.sh.tmpl). The
-// Terraform `templatefile()` directives have been pre-resolved to their
-// exit-node-optimal constant values; only the three per-deployment inputs
-// below remain dynamic. The script body is emitted with String.raw so bash
-// `$`, `\`, and `"` survive without escaping.
+// Renders the exit-node bootstrap as a flat POSIX `sh` user_data script:
+// install Tailscale, authenticate with a fresh ephemeral key, and advertise the
+// host as an exit node. Only the three per-deployment inputs below vary; the
+// rest is constant. The body uses String.raw so bash `$`, `\`, and `"` survive
+// without escaping.
 
 export interface CloudInitInput {
   /** A freshly-minted ephemeral Tailscale auth key (tag-scoped, reusable=false, ephemeral=true). */
