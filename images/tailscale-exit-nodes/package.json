@@ -1,6 +1,6 @@
 {
   "name": "tailscale-exit-nodes",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "Control plane for self-service Tailscale exit-node deployments (AWS Lightsail + Vultr) with a TTL.",
@@ -21,6 +21,7 @@
     "aws4fetch": "^1.0.20",
     "hono": "^4.6.14",
     "pg": "^8.13.1",
+    "prom-client": "^15.1.3",
     "zod": "^4.0.0"
   },
   "devDependencies": {

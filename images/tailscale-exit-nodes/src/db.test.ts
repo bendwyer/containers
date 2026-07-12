@@ -94,4 +94,22 @@ describe('db', () => {
   it('ping resolves against a live connection', async () => {
     await expect(db.ping()).resolves.toBeUndefined();
   });
+
+  it('metricsSnapshot groups all rows and returns only live ones', async () => {
+    await db.insertDeployment(newDeployment({ id: 'a' })); // provisioning
+    await db.insertDeployment(newDeployment({ id: 'b' }));
+    await db.markActive('b', '203.0.113.9'); // active
+    await db.insertDeployment(newDeployment({ id: 'c' }));
+    await db.markDestroyed('c'); // terminal
+
+    const snap = await db.metricsSnapshot();
+
+    expect(snap.counts.reduce((n, c) => n + c.n, 0)).toBe(3);
+    expect(snap.counts.map((c) => c.status)).toContain('destroyed');
+    expect(typeof snap.counts[0].n).toBe('number');
+
+    // The destroyed row is excluded from the live set.
+    expect(snap.live.map((r) => r.id).sort()).toEqual(['a', 'b']);
+    expect(typeof snap.live[0].expiresAt).toBe('number');
+  });
 });

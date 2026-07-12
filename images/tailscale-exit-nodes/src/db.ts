@@ -28,6 +28,30 @@ export interface Deployment {
   expires_at: number;
 }
 
+/** A grouped count of deployments, for the exit_node_deployments gauge. */
+export interface MetricsCount {
+  status: string;
+  provider: Provider;
+  region: string;
+  n: number;
+}
+
+/** A live (provisioning/active) deployment, for the per-node expiry gauge. */
+export interface MetricsLiveRow {
+  id: string;
+  name: string;
+  provider: Provider;
+  region: string;
+  status: string;
+  expiresAt: number;
+}
+
+/** The bounded-cardinality view GET /metrics builds its gauges from. */
+export interface MetricsSnapshot {
+  counts: MetricsCount[];
+  live: MetricsLiveRow[];
+}
+
 /** The fields POST /deploy supplies when inserting a fresh `provisioning` row. */
 export interface NewDeployment {
   id: string;
@@ -149,6 +173,41 @@ export function createDb(pool: Pool) {
 
     async markDestroyed(id: string): Promise<void> {
       await pool.query(`UPDATE deployments SET status = 'destroyed' WHERE id = $1`, [id]);
+    },
+
+    /**
+     * A bounded snapshot for the metrics endpoint: grouped counts across the
+     * whole ledger, plus the live (provisioning/active) rows only. Two cheap
+     * grouped reads rather than pulling the full ledger on every scrape, and
+     * per-node series stay bounded to what is actually live.
+     */
+    async metricsSnapshot(): Promise<MetricsSnapshot> {
+      const counts = await pool.query(
+        `SELECT status, provider, region_slug AS region, count(*) AS n
+           FROM deployments
+           GROUP BY status, provider, region_slug`,
+      );
+      const live = await pool.query(
+        `SELECT id, name, provider, region_slug AS region, status, expires_at
+           FROM deployments
+           WHERE status IN ('provisioning', 'active')`,
+      );
+      return {
+        counts: counts.rows.map((r) => ({
+          status: r.status,
+          provider: r.provider as Provider,
+          region: r.region,
+          n: toNumber(r.n),
+        })),
+        live: live.rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          provider: r.provider as Provider,
+          region: r.region,
+          status: r.status,
+          expiresAt: toNumber(r.expires_at),
+        })),
+      };
     },
 
     /** Load the ledger columns the reaper sweep reasons about. */

@@ -200,22 +200,26 @@ export async function prune(deps: ReaperDeps, now: number = Date.now()): Promise
 }
 
 /**
- * Start the periodic reaper sweep. Kicks an initial sweep immediately (a fresh
- * process reconciles VMs left by a previous one), then every `intervalMs`.
- * Returns a stop function that clears the interval.
+ * Schedule `sweep`: run it immediately (a fresh process reconciles VMs left by a
+ * previous one), then every `intervalMs`. Errors are isolated and logged so one
+ * failed sweep never stops the schedule. The sweep itself is injected so the
+ * periodic timer and the on-demand /prune route share one metrics-recording
+ * path. Returns a stop function that clears the interval.
  */
-export function startReaper(deps: ReaperDeps, intervalMs: number = REAPER_INTERVAL_MS): () => void {
-  const sweep = async () => {
+export function startReaper(
+  sweep: () => Promise<unknown>,
+  intervalMs: number = REAPER_INTERVAL_MS,
+): () => void {
+  const tick = async () => {
     try {
-      const summary = await prune(deps);
-      console.log(`reaper sweep ${JSON.stringify(summary)}`);
+      await sweep();
     } catch (err) {
       console.error(`reaper sweep failed: ${errorMessage(err)}`);
     }
   };
 
-  void sweep();
-  const timer = setInterval(() => void sweep(), intervalMs);
+  void tick();
+  const timer = setInterval(() => void tick(), intervalMs);
   // Don't let the sweep timer keep the process alive on its own.
   if (typeof timer.unref === 'function') timer.unref();
   return () => clearInterval(timer);
