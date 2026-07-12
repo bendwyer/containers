@@ -18,10 +18,9 @@ import {
 } from './lib/reaper-core.js';
 import { vultr } from './lib/vultr.js';
 
-// Reaper I/O: the thin wrappers that read the ledger, enumerate both clouds,
-// run the pure planner (reaper-core), and apply the plan. Ported from the
-// retired reaper-core I/O half, rewired from D1 to db.ts. Runs on a setInterval
-// sweep and is also invoked on demand by POST /prune.
+// Reaper I/O: read the ledger, list instances on both clouds, run the pure
+// planner (reaper-core) to decide what to remove, and apply that plan. Runs on a
+// timer and also on demand via POST /prune.
 
 const REAPER_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -110,7 +109,7 @@ async function sweepClouds(
 /**
  * Apply the plan: delete each instance (and any Vultr firewall group), then mark
  * its ledger row destroyed; reconcile rows whose instance is already gone. Every
- * step is isolated — one failure is recorded and the sweep continues, and a row
+ * step is isolated: one failure is recorded and the sweep continues, and a row
  * is only marked destroyed after its instance delete succeeds.
  */
 async function executePlan(

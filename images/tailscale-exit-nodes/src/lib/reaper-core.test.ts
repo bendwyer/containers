@@ -58,7 +58,7 @@ describe('tag schema', () => {
   });
 });
 
-describe('planPrune — tracked instances', () => {
+describe('planPrune: tracked instances', () => {
   it('reaps an active instance past expires_at, using the ledger not the tag', () => {
     const rows = [row({ expires_at: NOW - HOUR })];
     // Tag still says the future (DELETE clamps the row, not the tag); the ledger wins.
@@ -121,7 +121,7 @@ describe('planPrune — tracked instances', () => {
   });
 });
 
-describe('planPrune — orphans (no matching row)', () => {
+describe('planPrune: orphans (no matching row)', () => {
   it('reaps an orphan past its expires-at tag', () => {
     const plan = planPrune({
       rows: [],
@@ -153,7 +153,7 @@ describe('planPrune — orphans (no matching row)', () => {
   });
 });
 
-describe('planPrune — reverse reconciliation', () => {
+describe('planPrune: reverse reconciliation', () => {
   it('reconciles an active row whose instance is gone', () => {
     const plan = planPrune({ rows: [row({})], live: [], now: NOW });
     expect(plan.deletes).toHaveLength(0);

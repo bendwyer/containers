@@ -11,7 +11,7 @@ import { type LightsailTag } from './lightsail.js';
 //
 // Every exit-node instance is tagged at create time so a sweep can be matched
 // back to the ledger and reaped even when ledger state is incomplete:
-//   exit-node            marks the instance as ours — the Reaper ONLY ever
+//   exit-node            marks the instance as ours; the Reaper ONLY ever
 //                        deletes instances carrying this tag.
 //   deployment-id:<uuid> links the instance to its ledger row even if the row's
 //                        instance_ref was never recorded (a saga that created
@@ -19,7 +19,7 @@ import { type LightsailTag } from './lightsail.js';
 //   expires-at:<unix-ms> the instance's own copy of its create-time TTL, so an
 //                        orphan with no ledger row at all is still self-describing
 //                        and reapable. (The ledger's expires_at is authoritative
-//                        for tracked rows — DELETE clamps the row, not the tag.)
+//                        for tracked rows; DELETE clamps the row, not the tag.)
 //
 // Lightsail tags are native key/value pairs; Vultr tags are a flat string array,
 // so the keyed tags are encoded as "key:value" strings there.
@@ -144,7 +144,7 @@ export interface PlanInput {
 /**
  * Decide, from ledger rows + live instances, which instances to delete, which
  * rows to reconcile (their instance is already gone), and which to leave alone.
- * No I/O — every branch is unit-testable.
+ * No I/O; every branch is unit-testable.
  */
 export function planPrune({
   rows,
@@ -226,8 +226,8 @@ function decideLive(
         ? { reap: true, reason: 'active deployment past expires_at' }
         : { reap: false, reason: 'active and not yet expired' };
     default:
-      // 'destroyed' (or anything terminal): the row says gone but the VM lingers
-      // — a delete that silently didn't take. Reap it.
+      // 'destroyed' (or anything terminal): the row says gone but the VM
+      // lingers, a delete that silently didn't take. Reap it.
       return { reap: true, reason: `instance for a '${row.status}' row still present` };
   }
 }
@@ -247,7 +247,7 @@ function decideMissing(
         ? { reconcile: true, reason: 'provisioning row stuck with no instance' }
         : { reconcile: false, reason: 'provisioning in flight' };
     default:
-      // 'destroyed' / unknown — already terminal, nothing to do.
+      // 'destroyed' / unknown: already terminal, nothing to do.
       return { reconcile: false, reason: '' };
   }
 }

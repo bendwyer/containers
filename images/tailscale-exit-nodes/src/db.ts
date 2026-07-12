@@ -3,10 +3,8 @@ import { fileURLToPath } from 'node:url';
 import type { Pool } from 'pg';
 import type { LedgerRow, Provider } from './lib/reaper-core.js';
 
-// Data layer over the Postgres `deployments` ledger. The Pool is injected so the
-// tests can back it with pg-mem and the runtime with a real connection. SQL
-// notes: BIGINT times, `$n` placeholders, `rowCount` for change detection, and a
-// CASE clamp for the expiry-clamp update (pg-mem-friendly).
+// Data access over the Postgres `deployments` table. The Pool is injected so
+// tests can use an in-memory database (pg-mem) and the runtime a real one.
 
 // One migration file, applied idempotently on boot (CREATE ... IF NOT EXISTS).
 const MIGRATION_PATH = new URL('../migrations/0001_deployments.sql', import.meta.url);
@@ -86,7 +84,7 @@ export function createDb(pool: Pool) {
     },
 
     /**
-     * Mark any row left `provisioning` by a previous process `failed` — the saga
+     * Mark any row left `provisioning` by a previous process `failed`; the saga
      * that owned it died when the process restarted, so its VM (if any) is reaped
      * by the reaper via tags. Run once on boot, after migrate.
      */
@@ -176,10 +174,9 @@ export function createDb(pool: Pool) {
     },
 
     /**
-     * A bounded snapshot for the metrics endpoint: grouped counts across the
-     * whole ledger, plus the live (provisioning/active) rows only. Two cheap
-     * grouped reads rather than pulling the full ledger on every scrape, and
-     * per-node series stay bounded to what is actually live.
+     * Data for the metrics endpoint: counts grouped by status, provider, and
+     * region, plus the currently live (provisioning/active) rows. Two small
+     * queries instead of loading every row on each scrape.
      */
     async metricsSnapshot(): Promise<MetricsSnapshot> {
       const counts = await pool.query(
