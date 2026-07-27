@@ -11,5 +11,6 @@ grafana-mcp: ./**/grafana-mcp/**
 humble-cli: ./**/humble-cli/**
 humble-sorter: ./**/humble-sorter/**
 kobo-book-downloader: ./**/kobo-book-downloader/**
+paperless-mcp: ./**/paperless-mcp/**
 tailscale-exit-nodes: ./**/tailscale-exit-nodes/**
 terraform-mcp: ./**/terraform-mcp/**
