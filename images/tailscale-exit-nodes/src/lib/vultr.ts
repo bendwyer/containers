@@ -35,6 +35,47 @@ export type VultrInstance = z.infer<typeof InstanceSchema>;
 const InstanceResponse = z.object({ instance: InstanceSchema });
 const ListInstancesResponse = z.object({ instances: z.array(InstanceSchema) });
 
+const RETRY_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 500;
+
+class VultrHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'VultrHttpError';
+  }
+}
+
+/**
+ * Vultr serves transient 5xx often enough to fail a couple of percent of reaper
+ * sweeps, and occasionally answers 200 with a body missing the documented field.
+ * Retry those; anything else (a rejected key, a genuine 4xx) fails on the first
+ * attempt so it still reaches the ExitNodeReaperErrors alert promptly.
+ */
+function isRetryable(err: unknown): boolean {
+  if (err instanceof VultrHttpError) return err.status === 429 || err.status >= 500;
+  if (err instanceof z.ZodError || err instanceof SyntaxError) return true;
+  // fetch() reports connection failures as TypeError.
+  return err instanceof TypeError;
+}
+
+/**
+ * Retry only where a repeated call cannot leak a second resource: a 5xx on a
+ * create may mean Vultr made the instance and lost the response.
+ */
+function isIdempotent(method: string): boolean {
+  return method === 'GET' || method === 'DELETE';
+}
+
+const defaultSleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+export interface VultrOptions {
+  sleep?: (ms: number) => Promise<void>;
+}
+
 export interface CreateVultrInstanceInput {
   region: string;
   label: string;
@@ -48,8 +89,17 @@ export interface CreateVultrInstanceInput {
   osId?: number;
 }
 
-export function vultr(apiKey: string) {
-  async function call(method: string, path: string, body?: unknown): Promise<unknown> {
+export function vultr(apiKey: string, opts: VultrOptions = {}) {
+  const sleep = opts.sleep ?? defaultSleep;
+
+  // Schema parsing happens here rather than at the call site so a malformed body
+  // is retried alongside the transport failures it travels with.
+  async function callOnce(
+    method: string,
+    path: string,
+    body: unknown,
+    schema?: z.ZodType<unknown>,
+  ): Promise<unknown> {
     const res = await fetch(`${API_BASE}${path}`, {
       method,
       headers: {
@@ -59,15 +109,43 @@ export function vultr(apiKey: string) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (!res.ok) {
-      throw new Error(`Vultr ${method} ${path} failed: ${res.status} ${await res.text()}`);
+      throw new VultrHttpError(
+        res.status,
+        `Vultr ${method} ${path} failed: ${res.status} ${await res.text()}`,
+      );
     }
     if (res.status === 204) return undefined;
-    return res.json();
+    const data: unknown = await res.json();
+    return schema ? schema.parse(data) : data;
+  }
+
+  async function call(method: string, path: string, body?: unknown): Promise<unknown>;
+  async function call<T>(
+    method: string,
+    path: string,
+    body: unknown,
+    schema: z.ZodType<T>,
+  ): Promise<T>;
+  async function call(
+    method: string,
+    path: string,
+    body?: unknown,
+    schema?: z.ZodType<unknown>,
+  ): Promise<unknown> {
+    const attempts = isIdempotent(method) ? RETRY_ATTEMPTS : 1;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await callOnce(method, path, body, schema);
+      } catch (err) {
+        if (attempt >= attempts || !isRetryable(err)) throw err;
+        await sleep(RETRY_BASE_DELAY_MS * 2 ** (attempt - 1));
+      }
+    }
   }
 
   return {
     async createFirewallGroup(description: string): Promise<string> {
-      const data = FirewallGroupResponse.parse(await call('POST', '/firewalls', { description }));
+      const data = await call('POST', '/firewalls', { description }, FirewallGroupResponse);
       return data.firewall_group.id;
     },
 
@@ -85,32 +163,43 @@ export function vultr(apiKey: string) {
     },
 
     async createInstance(input: CreateVultrInstanceInput): Promise<VultrInstance> {
-      const data = await call('POST', '/instances', {
-        region: input.region,
-        plan: input.plan ?? DEFAULTS.plan,
-        os_id: input.osId ?? DEFAULTS.osId,
-        label: input.label,
-        hostname: input.hostname,
-        user_data: btoa(input.userData),
-        tags: input.tags ?? [],
-        firewall_group_id: input.firewallGroupId,
-        enable_ipv6: true,
-        ddos_protection: false,
-        activation_email: false,
-      });
-      return InstanceResponse.parse(data).instance;
+      const data = await call(
+        'POST',
+        '/instances',
+        {
+          region: input.region,
+          plan: input.plan ?? DEFAULTS.plan,
+          os_id: input.osId ?? DEFAULTS.osId,
+          label: input.label,
+          hostname: input.hostname,
+          user_data: btoa(input.userData),
+          tags: input.tags ?? [],
+          firewall_group_id: input.firewallGroupId,
+          enable_ipv6: true,
+          ddos_protection: false,
+          activation_email: false,
+        },
+        InstanceResponse,
+      );
+      return data.instance;
     },
 
     async getInstance(id: string): Promise<VultrInstance> {
-      return InstanceResponse.parse(await call('GET', `/instances/${id}`)).instance;
+      const data = await call('GET', `/instances/${id}`, undefined, InstanceResponse);
+      return data.instance;
     },
 
     /** List instances (optionally filtered by tag) for the Reaper's sweep. */
     async listInstances(tag?: string): Promise<VultrInstance[]> {
       const params = new URLSearchParams({ per_page: '500' });
       if (tag) params.set('tag', tag);
-      const data = await call('GET', `/instances?${params.toString()}`);
-      return ListInstancesResponse.parse(data).instances;
+      const data = await call(
+        'GET',
+        `/instances?${params.toString()}`,
+        undefined,
+        ListInstancesResponse,
+      );
+      return data.instances;
     },
 
     async deleteInstance(id: string): Promise<void> {

@@ -116,3 +116,76 @@ describe('vultr client', () => {
     );
   });
 });
+
+describe('vultr retries', () => {
+  const noSleep = { sleep: async () => {} };
+
+  it('retries a 5xx on a read and succeeds', async ({ expect }) => {
+    let n = 0;
+    const calls = mockFetch(() =>
+      ++n === 1
+        ? new Response('upgrades in progress', { status: 502 })
+        : Response.json({ instances: [{ id: 'inst-1' }] }),
+    );
+
+    const instances = await vultr(API_KEY, noSleep).listInstances('exit-node');
+
+    expect(instances).toHaveLength(1);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('retries a 200 whose body is missing the documented field', async ({ expect }) => {
+    let n = 0;
+    const calls = mockFetch(() =>
+      ++n === 1 ? Response.json({}) : Response.json({ instances: [] }),
+    );
+
+    await expect(vultr(API_KEY, noSleep).listInstances('exit-node')).resolves.toEqual([]);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('gives up after three attempts and surfaces the last error', async ({ expect }) => {
+    const calls = mockFetch(
+      () => new Response('{"error":"Internal server error."}', { status: 500 }),
+    );
+
+    await expect(vultr(API_KEY, noSleep).listInstances('exit-node')).rejects.toThrow(/500/);
+    expect(calls).toHaveLength(3);
+  });
+
+  it('does not retry a 4xx', async ({ expect }) => {
+    const calls = mockFetch(() => new Response('bad key', { status: 401 }));
+
+    await expect(vultr(API_KEY, noSleep).getInstance('inst-1')).rejects.toThrow(/401/);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('does not retry creates, which would leak a second instance', async ({ expect }) => {
+    const calls = mockFetch(() => new Response('boom', { status: 503 }));
+
+    await expect(
+      vultr(API_KEY, noSleep).createInstance({
+        region: 'fra',
+        label: 'exit-node-ab12',
+        hostname: 'exit-node-ab12',
+        userData: '#!/bin/sh\ntrue\n',
+        firewallGroupId: 'fwg-123',
+      }),
+    ).rejects.toThrow(/503/);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('backs off exponentially between attempts', async ({ expect }) => {
+    const delays: number[] = [];
+    mockFetch(() => new Response('boom', { status: 500 }));
+
+    await expect(
+      vultr(API_KEY, {
+        sleep: async (ms) => {
+          delays.push(ms);
+        },
+      }).listInstances(),
+    ).rejects.toThrow(/500/);
+    expect(delays).toEqual([500, 1000]);
+  });
+});
