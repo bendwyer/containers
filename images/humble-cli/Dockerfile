@@ -1,4 +1,4 @@
-FROM golang:1.26-alpine3.23 AS build
+FROM golang:1.27-alpine3.23 AS build
 RUN apk add --no-cache curl jq tar && \
   repo_owner="smbl64" \
   repo_name="humble-cli" \
