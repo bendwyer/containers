@@ -26,7 +26,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
-    "@types/node": "^22.10.2",
+    "@types/node": "^24.0.0",
     "@types/pg": "^8.11.10",
     "eslint": "^10.0.0",
     "pg-mem": "^3.0.5",
