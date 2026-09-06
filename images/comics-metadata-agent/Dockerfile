@@ -3,6 +3,13 @@ RUN apk add --no-cache gcc g++ musl-dev pkgconf \
     jpeg-dev zlib-dev libpng-dev libwebp-dev icu-dev
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+# The shared workflow runs no test job, so the suite gates the image here. The
+# runtime copies /install from this stage, so it cannot be skipped.
+WORKDIR /src
+COPY . .
+RUN set -eu; \
+    site=$(echo /install/lib/python*/site-packages); \
+    PYTHONPATH="$site" python -m unittest discover -p "test_*.py"
 
 FROM python:3.14-alpine3.24@sha256:c6ead215bfd31f1e433d968853b7a769989117115b728874824e6c0a27cb96fc
 RUN apk add --no-cache jpeg zlib libpng libwebp icu-libs
