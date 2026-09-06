@@ -50,19 +50,27 @@ def page(data, has_next=False):
     }
 
 
+def en_title(title):
+    """Minimal v2 `titles` list carrying only an English primary title."""
+    return [{"language": "en", "traits": ["official"], "title": title, "is_primary": True}]
+
+
 def series(id_, title="Some Series", year=2020, publisher="Some Publisher"):
     return {
         "id": id_,
-        "title": title,
-        "native_title": "ネイティブ",
-        "romanized_title": "Romanized",
-        "year": year,
+        "titles": [
+            {"language": "en", "traits": ["official"], "title": title, "is_primary": True},
+            {"language": "ja", "traits": ["native"], "title": "ネイティブ", "is_primary": True},
+            {"language": "ja-Latn", "traits": ["native"], "title": "Romanized", "is_primary": True},
+        ],
+        "published": {"start_date": f"{year}-08-07", "end_date": None},
         "type": "manga",
         "status": "completed",
         "content_rating": "safe",
         "publishers": [{"name": publisher}],
         "total_chapters": "10",
-        "cover": {"raw": "https://cdn.mangabaka.dev/cover.jpg"},
+        "cover": {"raw": "https://cdn.mangabaka.org/cover.jpg"},
+        "canonical_url": f"https://mangabaka.org/manga/{id_}/slug",
         "description": "desc",
     }
 
@@ -113,7 +121,7 @@ class SearchTests(unittest.TestCase):
         ])
         c.search_series("foo")
         url = session.get.call_args.args[0]
-        self.assertEqual(url, "https://api.mangabaka.dev/v1/series/search")
+        self.assertEqual(url, "https://api.mangabaka.org/v2/series/search")
         params = session.get.call_args.kwargs["params"]
         self.assertEqual(params["q"], "foo")
         self.assertEqual(params["limit"], 50)
@@ -128,7 +136,7 @@ class GetSeriesTests(unittest.TestCase):
         self.assertEqual(got["id"], 42)
         self.assertEqual(got["name"], "Found")
         url = session.get.call_args.args[0]
-        self.assertEqual(url, "https://api.mangabaka.dev/v1/series/42")
+        self.assertEqual(url, "https://api.mangabaka.org/v2/series/42")
 
     def test_get_series_caches(self):
         c, session = make_client([
@@ -183,46 +191,83 @@ class SimplifyTests(unittest.TestCase):
         self.assertIsNone(_pick_cover_url(None))
 
     def test_simplify_series_handles_missing_publishers(self):
-        s = _simplify_series({"id": 1, "title": "Foo", "year": 2020})
+        s = _simplify_series({"id": 1, "titles": en_title("Foo")})
         self.assertIsNone(s["publisher"])
         self.assertIsNone(s["count_of_issues"])
 
     def test_simplify_handles_string_publisher_in_list(self):
         s = _simplify_series({
-            "id": 1, "title": "Foo", "year": 2020,
+            "id": 1, "titles": en_title("Foo"),
             "publishers": ["Plain String Publisher"],
         })
         self.assertEqual(s["publisher"], "Plain String Publisher")
 
     def test_simplify_total_chapters_garbage_yields_none(self):
         s = _simplify_series({
-            "id": 1, "title": "Foo", "year": 2020,
+            "id": 1, "titles": en_title("Foo"),
             "total_chapters": "ongoing",
         })
         self.assertIsNone(s["count_of_issues"])
 
-    def test_simplify_extracts_aliases_excluding_primary(self):
+    def test_simplify_start_year_from_published(self):
         s = _simplify_series({
-            "id": 1,
-            "title": "Foo",
-            "year": 2020,
-            "secondary_titles": {
-                "unknown": [
-                    {"title": "Foo", "note": None},      # dup of primary, drop
-                    {"title": "Foo Omnibus", "note": None},
-                    {"title": "Bar", "note": None},
-                    {"title": "Foo Omnibus", "note": "x"},  # dup, drop
-                ],
-                "ja": [
-                    {"title": "フー", "note": None},
-                ],
-            },
+            "id": 1, "titles": en_title("Foo"),
+            "published": {"start_date": "2001-08-07", "end_date": "2016-08-23"},
         })
+        self.assertEqual(s["start_year"], 2001)
+
+    def test_simplify_start_year_none_when_absent_or_null(self):
+        self.assertIsNone(
+            _simplify_series({"id": 1, "titles": en_title("Foo")})["start_year"])
+        self.assertIsNone(
+            _simplify_series({
+                "id": 1, "titles": en_title("Foo"),
+                "published": {"start_date": None},
+            })["start_year"])
+
+    def test_simplify_splits_native_from_romanized_by_latn_subtag(self):
+        s = _simplify_series({"id": 1, "titles": [
+            {"language": "en", "traits": ["official"], "title": "Bleach", "is_primary": True},
+            {"language": "ja", "traits": ["native"], "title": "BLEACH", "is_primary": True},
+            {"language": "ja-Latn", "traits": ["native"], "title": "Burichi", "is_primary": True},
+        ]})
+        self.assertEqual(s["name"], "Bleach")
+        self.assertEqual(s["native_title"], "BLEACH")
+        self.assertEqual(s["romanized_title"], "Burichi")
+
+    def test_simplify_title_prefers_primary_over_official(self):
+        s = _simplify_series({"id": 1, "titles": [
+            {"language": "en", "traits": ["official"], "title": "Official", "is_primary": False},
+            {"language": "en", "traits": [], "title": "Primary", "is_primary": True},
+        ]})
+        self.assertEqual(s["name"], "Primary")
+
+    def test_simplify_title_falls_back_across_languages(self):
+        s = _simplify_series({"id": 1, "titles": [
+            {"language": "ja", "traits": ["native"], "title": "ネイティブ", "is_primary": True},
+        ]})
+        self.assertEqual(s["name"], "ネイティブ")
+
+    def test_simplify_extracts_aliases_excluding_primary(self):
+        s = _simplify_series({"id": 1, "titles": [
+            {"language": "en", "traits": ["official"], "title": "Foo", "is_primary": True},
+            {"language": "en", "traits": [], "title": "Foo Omnibus", "is_primary": False},
+            {"language": "es", "traits": [], "title": "Bar", "is_primary": False},
+            {"language": "fr", "traits": [], "title": "Foo Omnibus", "is_primary": False},
+            {"language": "ja", "traits": [], "title": "フー", "is_primary": False},
+        ]})
         self.assertEqual(s["aliases"], ["Foo Omnibus", "Bar", "フー"])
 
-    def test_simplify_aliases_empty_when_no_secondary(self):
-        s = _simplify_series({"id": 1, "title": "Foo", "year": 2020})
+    def test_simplify_aliases_empty_when_only_primary(self):
+        s = _simplify_series({"id": 1, "titles": en_title("Foo")})
         self.assertEqual(s["aliases"], [])
+
+    def test_simplify_site_url_uses_canonical_url(self):
+        s = _simplify_series({
+            "id": 1, "titles": en_title("Foo"),
+            "canonical_url": "https://mangabaka.org/manga/1/foo",
+        })
+        self.assertEqual(s["site_url"], "https://mangabaka.org/manga/1/foo")
 
     def test_call_count_reflects_http_calls(self):
         c, _ = make_client([

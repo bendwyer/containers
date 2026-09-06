@@ -63,9 +63,11 @@ _VERSION = "0.3.16"
 
 # ID is embedded in <Web> (most reliable) and <Notes> (fallback). Source is
 # derived from which pattern matches: ComicVine URL is comicvine.gamespot.com
-# with /4000-NNN/ permalink; MangaBaka URL is mangabaka.dev/series/NNN.
+# with /4000-NNN/ permalink. MangaBaka moved host and path shape at v2, so
+# both forms must parse: already-tagged files carry mangabaka.dev/series/NNN
+# and new ones carry mangabaka.org/manga/NNN/<slug>.
 _CV_WEB_ID_RE = re.compile(r"/4000-(\d+)/")
-_MB_WEB_ID_RE = re.compile(r"mangabaka\.dev/series/(\d+)")
+_MB_WEB_ID_RE = re.compile(r"mangabaka\.(?:dev/series|org/manga)/(\d+)")
 _NOTES_ID_RE = re.compile(r"\[Issue ID (\d+)\]")
 _NOTES_MB_HINT_RE = re.compile(r"MangaBaka", re.IGNORECASE)
 
