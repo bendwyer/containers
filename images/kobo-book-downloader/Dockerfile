@@ -1,11 +1,11 @@
-FROM python:3.12-alpine3.23 AS builder
+FROM python:3.12-alpine3.24 AS builder
 
 WORKDIR /app
 RUN apk add --no-cache git
 RUN git clone https://github.com/TnS-hun/kobo-book-downloader.git .
 RUN pip install --no-cache-dir --target=/app/deps -r requirements.txt
 
-FROM python:3.12-alpine3.23
+FROM python:3.12-alpine3.24
 
 WORKDIR /app
 COPY --from=builder /app /app
