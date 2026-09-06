@@ -24,6 +24,16 @@
       "autoReplaceStringTemplate": "releases/download/{{{newValue}}}/mangabaka_talker-{{{newValue}}}-py3-none-any.whl",
       "depNameTemplate": "mizaki/mangabaka_talker",
       "datasourceTemplate": "github-releases"
+    },
+    {
+      "description": "kobo-book-downloader publishes no releases or tags, so the clone tracks a branch SHA.",
+      "customType": "regex",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
+      "matchStrings": ["ARG KOBO_REF=(?<currentDigest>[0-9a-f]{40})"],
+      "currentValueTemplate": "master",
+      "depNameTemplate": "TnS-hun/kobo-book-downloader",
+      "packageNameTemplate": "https://github.com/TnS-hun/kobo-book-downloader",
+      "datasourceTemplate": "git-refs"
     }
   ],
   "packageRules": [

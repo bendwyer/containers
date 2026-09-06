@@ -5,4 +5,4 @@
 
 # curl -sSL https://api.github.com/repos/${repo_owner}/${repo_name}/releases/latest | jq -r '.tag_name | split("v")[1]'
 
-echo "2.0.0"
+echo "2.0.1"
