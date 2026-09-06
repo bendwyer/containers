@@ -9,7 +9,7 @@
   "github-actions": { "enabled": false },
   "customManagers": [
     {
-      "description": "Alpine release embedded in compound base image tags such as python:3.12-alpine3.23. The dockerfile manager treats everything after the first hyphen as a compatibility marker and never moves it, which is how these stranded on alpine3.23 while the standalone alpine images reached 3.24.",
+      "description": "Alpine release embedded in a compound tag; the dockerfile manager preserves the suffix and never moves it.",
       "customType": "regex",
       "managerFilePatterns": ["/(^|/)Dockerfile$/"],
       "matchStrings": ["FROM \\S+:\\S*-alpine(?<currentValue>\\d+\\.\\d+)"],
@@ -24,7 +24,7 @@
       "pinDigests": true
     },
     {
-      "description": "The embedded Alpine release sits mid-tag, so there is no digest to attach to it; the digest belongs to the whole image and is pinned by the rule above. Grouped into one PR because #24 standardised these deliberately, so they should move together rather than drift apart per image.",
+      "description": "A mid-tag value has no digest of its own. Grouped so the standard moves in one PR.",
       "matchManagers": ["custom.regex"],
       "matchPackageNames": ["alpine"],
       "pinDigests": false,
@@ -38,17 +38,23 @@
       "automerge": true
     },
     {
-      "description": "Automerge patch+digest only for 0.x, where a minor is allowed to break.",
+      "description": "Automerge patch+digest only for 0.x",
       "matchDatasources": ["docker", "npm"],
       "matchCurrentVersion": "/^v?0\\./",
       "matchUpdateTypes": ["patch", "digest"],
       "automerge": true
     },
     {
-      "description": "Base runtimes and the OS: a minor here is a language release line or OS release change, not a routine bump, and the two ignores this config replaces existed to keep exactly these reviewable. Patches and digests still automerge.",
+      "description": "A minor here is a release line change, so review it.",
       "matchPackageNames": ["node", "python", "golang", "alpine"],
       "matchUpdateTypes": ["minor"],
       "automerge": false
+    },
+    {
+      "description": "typescript-eslint's peer range caps typescript below 6.1, so a 7.x update cannot resolve.",
+      "matchDatasources": ["npm"],
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<7"
     }
   ]
 }
