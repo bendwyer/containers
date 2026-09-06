@@ -15,6 +15,15 @@
       "matchStrings": ["FROM \\S+:\\S*-alpine(?<currentValue>\\d+\\.\\d+)"],
       "depNameTemplate": "alpine",
       "datasourceTemplate": "docker"
+    },
+    {
+      "description": "Talker wheel; a direct download URL is not a tracked dependency, so it went six months stale unseen.",
+      "customType": "regex",
+      "managerFilePatterns": ["/(^|/)requirements\\.txt$/"],
+      "matchStrings": ["releases/download/(?<currentValue>[^/]+)/mangabaka_talker-[^-]+-py3-none-any\\.whl"],
+      "autoReplaceStringTemplate": "releases/download/{{{newValue}}}/mangabaka_talker-{{{newValue}}}-py3-none-any.whl",
+      "depNameTemplate": "mizaki/mangabaka_talker",
+      "datasourceTemplate": "github-releases"
     }
   ],
   "packageRules": [
@@ -55,6 +64,17 @@
       "matchDatasources": ["npm"],
       "matchPackageNames": ["typescript"],
       "allowedVersions": "<7"
+    },
+    {
+      "description": "The talker implements comictagger's plugin API and nothing declares the range, so move them together.",
+      "matchPackageNames": ["comictagger", "mizaki/mangabaka_talker"],
+      "groupName": "mangabaka pair"
+    },
+    {
+      "description": "A .dev snapshot is not a release, and an already-unstable pin disables ignoreUnstable.",
+      "matchDatasources": ["pypi"],
+      "matchPackageNames": ["comictagger"],
+      "allowedVersions": "!/\\.dev/"
     }
   ]
 }
