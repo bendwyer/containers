@@ -1,4 +1,4 @@
-FROM node:24-alpine AS build
+FROM node:24-alpine3.24 AS build
 
 WORKDIR /app
 RUN npm install @ansible/ansible-mcp-server
