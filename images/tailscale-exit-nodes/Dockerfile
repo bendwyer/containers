@@ -6,10 +6,11 @@
 
 FROM node:24-alpine3.24 AS build
 WORKDIR /app
-# Install all deps (incl. dev) for the gate + compile. No lockfile (matches the
-# repo convention); deps float on the package.json ranges at build time.
-COPY package.json ./
-RUN npm install --no-audit --no-fund
+# Install all deps (incl. dev) for the gate + compile. `npm ci` installs the
+# locked tree exactly, so an upstream publish cannot change deps under a
+# rebuild of unchanged source. Renovate moves the lockfile.
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
 # Source + configs; node_modules/dist are excluded via .dockerignore.
 COPY . .
 # Gate, then compile TypeScript to dist/.
@@ -18,8 +19,8 @@ RUN npm run check && npm run build
 # Production dependencies only, in a clean layer for the runtime image.
 FROM node:24-alpine3.24 AS prod-deps
 WORKDIR /app
-COPY package.json ./
-RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 
 FROM node:24-alpine3.24 AS runtime
 WORKDIR /app
