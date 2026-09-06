@@ -1,0 +1,54 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "dependencyDashboard": false,
+  "prHourlyLimit": 0,
+  "labels": ["dependencies"],
+  "rebaseWhen": "behind-base-branch",
+  "separateMinorPatch": true,
+  "github-actions": { "enabled": false },
+  "customManagers": [
+    {
+      "description": "Alpine release embedded in compound base image tags such as python:3.12-alpine3.23. The dockerfile manager treats everything after the first hyphen as a compatibility marker and never moves it, which is how these stranded on alpine3.23 while the standalone alpine images reached 3.24.",
+      "customType": "regex",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
+      "matchStrings": ["FROM \\S+:\\S*-alpine(?<currentValue>\\d+\\.\\d+)"],
+      "depNameTemplate": "alpine",
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Pin digests for all docker images.",
+      "matchDatasources": ["docker"],
+      "pinDigests": true
+    },
+    {
+      "description": "The embedded Alpine release sits mid-tag, so there is no digest to attach to it; the digest belongs to the whole image and is pinned by the rule above. Grouped into one PR because #24 standardised these deliberately, so they should move together rather than drift apart per image.",
+      "matchManagers": ["custom.regex"],
+      "matchPackageNames": ["alpine"],
+      "pinDigests": false,
+      "groupName": "alpine base"
+    },
+    {
+      "description": "Automerge patch+minor+digest for >=1.x",
+      "matchDatasources": ["docker", "npm"],
+      "matchCurrentVersion": "/^v?[1-9]/",
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "Automerge patch+digest only for 0.x, where a minor is allowed to break.",
+      "matchDatasources": ["docker", "npm"],
+      "matchCurrentVersion": "/^v?0\\./",
+      "matchUpdateTypes": ["patch", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "Base runtimes and the OS: a minor here is a language release line or OS release change, not a routine bump, and the two ignores this config replaces existed to keep exactly these reviewable. Patches and digests still automerge.",
+      "matchPackageNames": ["node", "python", "golang", "alpine"],
+      "matchUpdateTypes": ["minor"],
+      "automerge": false
+    }
+  ]
+}
