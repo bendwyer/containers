@@ -1,2 +1,2 @@
-comictagger[ICU]==1.6.0b9
+comictagger[ICU]==1.6.0b11.dev0
 https://github.com/mizaki/mangabaka_talker/releases/download/0.1.0/mangabaka_talker-0.1.0-py3-none-any.whl
