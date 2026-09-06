@@ -1,4 +1,4 @@
-FROM python:3.12-alpine3.23 AS builder
+FROM python:3.12-alpine3.24 AS builder
 RUN apk add --no-cache gcc g++ musl-dev pkgconf patch \
     jpeg-dev zlib-dev libpng-dev libwebp-dev icu-dev
 COPY requirements.txt .
@@ -13,7 +13,7 @@ RUN set -eu; \
         patch -p1 --directory="$site" < "$p"; \
     done
 
-FROM python:3.12-alpine3.23
+FROM python:3.12-alpine3.24
 RUN apk add --no-cache jpeg zlib libpng libwebp icu-libs
 COPY --from=builder /install /usr/local
 ENV PYTHONUNBUFFERED=1

@@ -1,9 +1,9 @@
-FROM python:3.12-alpine3.23 AS builder
+FROM python:3.12-alpine3.24 AS builder
 RUN apk add --no-cache gcc musl-dev libxml2-dev libxslt-dev
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-FROM python:3.12-alpine3.23
+FROM python:3.12-alpine3.24
 RUN apk add --no-cache libxml2 libxslt
 COPY --from=builder /install /usr/local
 ENV PYTHONUNBUFFERED=1
