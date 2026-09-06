@@ -5,18 +5,6 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - "images/**/Dockerfile"
-      - "images/**/get-version.sh"
-      - "images/**/requirements.txt"
-      - "images/**/*.py"
-      - "images/**/*.patch"
-      # Source-built images gate their tests in the Docker build, so a PR that
-      # only touches their sources must still trigger CI.
-      - "images/**/*.ts"
-      - "images/**/*.js"
-      - "images/**/*.json"
-      - "images/**/*.sql"
   push:
     branches:
       - main
@@ -27,3 +15,11 @@ on:
 jobs:
   ci:
     uses: bendwyer/github-workflows/.github/workflows/container-build-push.yml@main
+
+  check:
+    if: always()
+    needs:
+      - ci
+    uses: bendwyer/github-workflows/.github/workflows/github-check.yml@main
+    with:
+      jobs: ${{ toJSON(needs) }}
