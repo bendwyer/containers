@@ -1,4 +1,4 @@
-"""MangaBaka v1 API client for the metadata agent.
+"""MangaBaka v2 API client for the metadata agent.
 
 Narrow surface focused on what the agent needs for manga matching:
   - Search for candidate series by title.
@@ -9,13 +9,18 @@ ComicVine has. A matched series_id IS the volume_id IS the issue_id from
 the agent's perspective. Per-volume issue numbers come from the source
 filename (handled later by comictagger -f); they're not in MangaBaka.
 
-Endpoints (api.mangabaka.dev/v1/):
+Endpoints (api.mangabaka.org/v2/):
   - GET /series/search?q=<q>&page=&limit= → {pagination, data: [series]}
   - GET /series/<id>                      → {data: series}
 
 API quirk: the search query param is `q`. Older code (and an early read of
 their docs) sent `title=`; the API now rejects that with HTTP 400 +
 `{"message":"Validation error: Unrecognized key: \"title\""}`.
+
+v2 replaced the flat `title`/`native_title`/`romanized_title`/`secondary_titles`
+fields with a single `titles` list of {language, traits, title, is_primary},
+and `year` with a `published` object. The output shape below is unchanged, so
+callers keep the ComicVine-derived keys they already read.
 
 Rate limit: 60/min — generous, won't bite at our cadence. No auth required.
 """
@@ -37,7 +42,7 @@ class MangaBakaRateLimitError(Exception):
 
 
 class MangaBakaClient:
-    BASE_URL = "https://api.mangabaka.dev/v1/"
+    BASE_URL = "https://api.mangabaka.org/v2/"
 
     def __init__(
         self,
@@ -126,10 +131,13 @@ class MangaBakaClient:
 def _simplify_series(raw: dict[str, Any]) -> dict[str, Any]:
     """Normalize an MBSeries response to fields the agent + planner use.
 
-    Notable mapping: MangaBaka's `year` becomes `start_year` so it lines up
-    with the ComicVine-derived shape used elsewhere. `count_of_issues` is
+    Notable mapping: the start of `published` becomes `start_year` so it lines
+    up with the ComicVine-derived shape used elsewhere. `count_of_issues` is
     derived from `total_chapters` when available.
     """
+    titles = raw.get("titles") or []
+    name = _get_title(titles, "en")
+    native_title, romanized_title = _native_titles(titles)
     cover = raw.get("cover") or {}
     publishers = raw.get("publishers") or []
     publisher_name = None
@@ -148,11 +156,11 @@ def _simplify_series(raw: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "id": raw.get("id"),
-        "name": raw.get("title"),
-        "native_title": raw.get("native_title"),
-        "romanized_title": raw.get("romanized_title"),
-        "aliases": _extract_aliases(raw),
-        "start_year": raw.get("year"),
+        "name": name,
+        "native_title": native_title,
+        "romanized_title": romanized_title,
+        "aliases": _extract_aliases(titles, name),
+        "start_year": _start_year(raw.get("published")),
         "publisher": publisher_name,
         # Full list with type+note preserved so the planner can filter
         # by licensee criteria (type=English, real note) rather than
@@ -161,35 +169,74 @@ def _simplify_series(raw: dict[str, Any]) -> dict[str, Any]:
         "count_of_issues": count_of_issues,
         "description_html": raw.get("description"),
         "image_url": _pick_cover_url(cover),
-        "site_url": _series_site_url(raw.get("id")),
+        "site_url": raw.get("canonical_url"),
         "type": raw.get("type"),  # manga, novel, manhwa, manhua, oel, other
         "status": raw.get("status"),
         "content_rating": raw.get("content_rating"),
     }
 
 
-def _extract_aliases(raw: dict[str, Any]) -> list[str]:
-    """Flatten MB's `secondary_titles` (nested by language) into a deduped
-    string list, excluding the primary title. These are alternate names MB
-    knows for the series but doesn't track as separate records — useful
-    for the agent to recognize variant editions like "<Series> Omnibus"."""
+def _get_title(titles: list[Any], lang: str = "en") -> str | None:
+    """Pick the display title for a language, mirroring the upstream talker's
+    precedence so both agree on what a series is called."""
+    entries = [t for t in titles if isinstance(t, dict)]
+    in_lang = [t for t in entries if str(t.get("language") or "").startswith(lang)]
+    for candidate in (
+        [t for t in in_lang if t.get("is_primary")],
+        [t for t in in_lang if "official" in (t.get("traits") or [])],
+        [t for t in in_lang if "alternative" in (t.get("traits") or [])],
+        in_lang,
+        entries,
+    ):
+        if candidate:
+            return candidate[0].get("title")
+    return None
+
+
+def _native_titles(titles: list[Any]) -> tuple[str | None, str | None]:
+    """Split the `native` trait into (native, romanized). A BCP-47 -Latn
+    subtag is the romanization, e.g. ja is 'BLEACH' and ja-Latn is its
+    transliteration."""
+    native = romanized = None
+    for t in titles:
+        if not isinstance(t, dict) or "native" not in (t.get("traits") or []):
+            continue
+        if str(t.get("language") or "").endswith("-Latn"):
+            romanized = romanized or t.get("title")
+        else:
+            native = native or t.get("title")
+    return native, romanized
+
+
+def _extract_aliases(titles: list[Any], primary: str | None) -> list[str]:
+    """Every other name in `titles`, deduped and excluding the display title.
+    Alternate names MB knows for the series but doesn't track as separate
+    records — useful for recognizing variant editions like "<Series> Omnibus"."""
     out: list[str] = []
     seen: set[str] = set()
-    primary = raw.get("title")
     if primary:
         seen.add(primary)
-    secondary = raw.get("secondary_titles") or {}
-    if not isinstance(secondary, dict):
-        return out
-    for bucket in secondary.values():
-        if not isinstance(bucket, list):
+    for entry in titles:
+        if not isinstance(entry, dict):
             continue
-        for entry in bucket:
-            t = entry.get("title") if isinstance(entry, dict) else None
-            if t and t not in seen:
-                out.append(t)
-                seen.add(t)
+        t = entry.get("title")
+        if t and t not in seen:
+            out.append(t)
+            seen.add(t)
     return out
+
+
+def _start_year(published: Any) -> int | None:
+    """v2 carries a `published` range; the agent only wants the start year."""
+    if not isinstance(published, dict):
+        return None
+    start = published.get("start_date")
+    if not isinstance(start, str) or len(start) < 4:
+        return None
+    try:
+        return int(start[:4])
+    except ValueError:
+        return None
 
 
 def _pick_cover_url(cover: dict[str, Any]) -> str | None:
@@ -208,9 +255,3 @@ def _pick_cover_url(cover: dict[str, Any]) -> str | None:
                 if isinstance(url, str):
                     return url
     return None
-
-
-def _series_site_url(series_id: Any) -> str | None:
-    if series_id is None:
-        return None
-    return f"https://mangabaka.dev/series/{series_id}"
