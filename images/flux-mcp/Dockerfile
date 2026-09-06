@@ -8,10 +8,10 @@ ARG OWNER
 ARG BINARY
 ARG REPOSITORY
 ARG TARGETARCH
+ARG VERSION
 
-RUN apk add --no-cache curl jq tar && \
-  RELEASE=$(curl -sSL https://api.github.com/repos/${OWNER}/${REPOSITORY}/releases/latest | jq -r '.tag_name | split("v")[1]') && \
-  curl -sSL "https://github.com/${OWNER}/${REPOSITORY}/releases/latest/download/${BINARY}_${RELEASE}_linux_${TARGETARCH}.tar.gz" \
+RUN apk add --no-cache curl tar && \
+  curl -sSL "https://github.com/${OWNER}/${REPOSITORY}/releases/download/v${VERSION}/${BINARY}_${VERSION}_linux_${TARGETARCH}.tar.gz" \
     | tar xzf - -C /usr/local/bin/ "${BINARY}"
 
 FROM gcr.io/distroless/static-debian13@sha256:f2ea2709ac8db56323cbd7d014277f32cb572d9ea124b0076f7aafe5980678fe

@@ -6,6 +6,7 @@ FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec4
 ARG OWNER
 ARG BINARY
 ARG TARGETARCH
+ARG VERSION
 
 RUN apk add --no-cache curl tar && \
   case "${TARGETARCH}" in \
@@ -13,7 +14,7 @@ RUN apk add --no-cache curl tar && \
     arm64) ARCH=arm64 ;; \
     *) ARCH="${TARGETARCH}" ;; \
   esac && \
-  curl -sSL "https://github.com/${OWNER}/${BINARY}/releases/latest/download/${BINARY}_Linux_${ARCH}.tar.gz" \
+  curl -sSL "https://github.com/${OWNER}/${BINARY}/releases/download/v${VERSION}/${BINARY}_Linux_${ARCH}.tar.gz" \
     | tar xzf - -C /usr/local/bin/ "${BINARY}"
 
 FROM gcr.io/distroless/static-debian13@sha256:f2ea2709ac8db56323cbd7d014277f32cb572d9ea124b0076f7aafe5980678fe

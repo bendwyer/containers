@@ -7,13 +7,13 @@ FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec4
 
 ARG OWNER
 ARG REPO
+ARG VERSION
 
-RUN apk add --no-cache curl jq tar && \
-  TAG="$(curl -sSL "https://api.github.com/repos/${OWNER}/${REPO}/releases/latest" | jq -r .tag_name)" && \
+RUN apk add --no-cache curl tar && \
   mkdir -p /src && \
-  curl -sSL "https://github.com/${OWNER}/${REPO}/archive/refs/tags/${TAG}.tar.gz" \
+  curl -sSL "https://github.com/${OWNER}/${REPO}/archive/refs/tags/v${VERSION}.tar.gz" \
     | tar xzf - --strip-components=1 -C /src && \
-  printf '%s' "${TAG#v}" > /src/.version
+  printf '%s' "${VERSION}" > /src/.version
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c AS build
 
