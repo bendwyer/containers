@@ -1,6 +1,6 @@
 {
   "name": "containers",
-  "image": "mcr.microsoft.com/devcontainers/base:debian12",
+  "image": "mcr.microsoft.com/devcontainers/base:debian12@sha256:86165cfc170e9b2aa8df90b847127eea97b08eb9987021e6e6ec6c3a96545d7c",
   "customizations": {
     "vscode": {
       "extensions": [
@@ -14,6 +14,6 @@
     }
   },
   "features": {
-    "ghcr.io/devcontainers/features/docker-in-docker:4": {}
+    "ghcr.io/devcontainers/features/docker-in-docker:4@sha256:7d979c4a36d595eb4ab79909caa3f396daf3b6152dcf38e8328ea4eff42206c7": {}
   }
 }
