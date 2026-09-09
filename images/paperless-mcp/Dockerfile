@@ -15,7 +15,7 @@ RUN apk add --no-cache curl tar && \
     | tar xzf - --strip-components=1 -C /src && \
   printf '%s' "${VERSION}" > /src/.version
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:4beef5b8919dcaa2dc924233bd069257e883cc7a061e09088a97d152d6a48510 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:096ca98743616ccfa14dccaa2a86615fd7345bd0c4535445226e98dbd46af2b5 AS build
 
 WORKDIR /src
 COPY --from=fetch /src .
@@ -29,7 +29,7 @@ RUN dotnet publish PaperlessMCP/PaperlessMCP.csproj \
 # Microsoft's chiseled base is the distroless equivalent for .NET: no shell, no
 # package manager, non-root by default. distroless/static cannot be used because
 # a framework-dependent build needs the runtime present.
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled@sha256:0839314d08bb65da369135389a5d8291f75ace587fbb0488f469eb92c62eef68
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled@sha256:9651fa59abcdf177c30392cb44a820605ca5d618429ab37acbf6e7c644510b02
 
 WORKDIR /app
 COPY --from=build /app/publish .
