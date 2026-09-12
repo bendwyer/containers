@@ -4,7 +4,7 @@ WORKDIR /app
 RUN apk add --no-cache git
 # Upstream publishes no releases or tags, so pin the branch SHA rather than
 # rebuild whatever HEAD happens to be. Renovate moves it via git-refs.
-ARG KOBO_REF=745e3975d05a300765243ef54e7979470da7d049
+ARG KOBO_REF=a90101c863a2e391a212a579130502b611d6a458
 RUN git clone https://github.com/TnS-hun/kobo-book-downloader.git . \
     && git checkout "$KOBO_REF"
 RUN pip install --no-cache-dir --target=/app/deps -r requirements.txt
