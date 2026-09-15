@@ -17,7 +17,7 @@ RUN apk add --no-cache curl tar && \
   curl -sSL "https://github.com/${OWNER}/${BINARY}/releases/download/v${VERSION}/${BINARY}_Linux_${ARCH}.tar.gz" \
     | tar xzf - -C /usr/local/bin/ "${BINARY}"
 
-FROM gcr.io/distroless/static-debian13@sha256:f2ea2709ac8db56323cbd7d014277f32cb572d9ea124b0076f7aafe5980678fe
+FROM gcr.io/distroless/static-debian13@sha256:58133991db06659feaabe0f4e97a35cebf15ef4ea08f8a4c6d2ee5f75e4aa6a0
 
 ARG BINARY
 
