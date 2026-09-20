@@ -55,14 +55,33 @@ RUN case "${TARGETARCH}" in \
 FROM ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
 ARG TARGETARCH
 
+# One source of truth for the identity. The runtime user, the guest passwd
+# entry below and the volume's fsGroup all have to agree, and nothing catches
+# it if they drift.
+ARG VALHEIM_UID=10001
+ARG VALHEIM_GID=10001
+ARG VALHEIM_HOME=/data/home
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   && rm -rf /var/lib/apt/lists/* \
-  && useradd --system --uid 10001 --user-group --no-create-home valheim \
+  && groupadd --system --gid "${VALHEIM_GID}" valheim \
+  && useradd --system --uid "${VALHEIM_UID}" --gid "${VALHEIM_GID}" \
+  --home-dir "${VALHEIM_HOME}" --no-create-home valheim \
   && mkdir -p /data \
   && chown valheim:valheim /data
 
 COPY --from=guest /rootfs /opt/valheim/rootfs
+
+# The guest has to know who it is running as. PlayFab Party, the transport the
+# crossplay backend needs, calls getpwuid() to find a home directory and
+# dereferences pw_dir with no null check; FEX resolves /etc/passwd inside the
+# RootFS, so a guest tree with no entry for this uid segfaults the server the
+# instant libparty.so is dlopened. Native runs never see it, because there the
+# process reads this image's own passwd.
+RUN echo "valheim:x:${VALHEIM_UID}:${VALHEIM_GID}::${VALHEIM_HOME}:/bin/sh" \
+  >> /opt/valheim/rootfs/etc/passwd \
+  && echo "valheim:x:${VALHEIM_GID}:" >> /opt/valheim/rootfs/etc/group
 COPY --from=fex /opt/fex /opt/fex
 COPY --from=fex /usr/share/fex-emu /usr/share/fex-emu
 COPY --from=depotdownloader /usr/local/bin/DepotDownloader /usr/local/bin/DepotDownloader
@@ -78,6 +97,10 @@ RUN test -x /opt/valheim/rootfs/lib64/ld-linux-x86-64.so.2 \
   && test -e /opt/valheim/rootfs/usr/lib/x86_64-linux-gnu/libpulse-mainloop-glib.so.0 \
   && test -e /opt/valheim/rootfs/usr/lib/x86_64-linux-gnu/pulseaudio/libpulsecommon-16.1.so \
   && test -s /opt/valheim/rootfs/etc/ssl/certs/ca-certificates.crt \
+  && test -e /opt/valheim/rootfs/etc/nsswitch.conf \
+  && test ! -e /opt/valheim/rootfs/etc/resolv.conf \
+  && test ! -e /opt/valheim/rootfs/etc/hosts \
+  && grep -q ":x:${VALHEIM_UID}:${VALHEIM_GID}:" /opt/valheim/rootfs/etc/passwd \
   && if [ "${TARGETARCH}" = "arm64" ]; then \
   FEX_ROOTFS=/opt/valheim/rootfs /usr/local/bin/select-fex.sh; \
   fi
