@@ -34,9 +34,22 @@
       "depNameTemplate": "TnS-hun/kobo-book-downloader",
       "packageNameTemplate": "https://github.com/TnS-hun/kobo-book-downloader",
       "datasourceTemplate": "git-refs"
+    },
+    {
+      "description": "Versions that arrive as a build-arg rather than an image tag. The dockerfile manager only reads FROM lines, so a pinned release downloaded by URL rots unseen unless it is annotated in place.",
+      "customType": "regex",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+ARG \\w+_VERSION=(?<currentValue>\\S+)"
+      ]
     }
   ],
   "packageRules": [
+    {
+      "description": "A FEX release is a bare YYMM number, which semver rejects outright.",
+      "matchPackageNames": ["FEX-Emu/FEX"],
+      "versioning": "loose"
+    },
     {
       "description": "Pin digests for all docker images.",
       "matchDatasources": ["docker"],
