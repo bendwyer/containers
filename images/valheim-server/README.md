@@ -29,6 +29,15 @@ Steamworks SDK Redist (app 1007, depot 1006) instead and places it, with
 `libsteamwebrtc.so`, in `~/.steam/sdk64`. This happens even with crossplay: the
 server initialises Steam either way, and a failure there is fatal.
 
+**An update check cannot take down a server that was running.** Restarts are
+normally unattended, so a Steam outage must not turn a stale server into no
+server. The download is retried with a doubling delay, and if it still fails
+while game files are already installed the server starts on those and says so
+loudly in the log. It fails only when there is nothing to fall back on. The
+residual risk is a download that fails partway, leaving a mix of old and new
+files that this will happily start; the common failure touches nothing, and
+`VALHEIM_VALIDATE=true` is the lever if you suspect otherwise.
+
 **The guest tree must not shadow what the runtime injects into `/etc`.** FEX
 resolves a guest path inside the RootFS first and falls back to the host only
 when it is absent. The stock image ships `resolv.conf` and `hosts` as empty
@@ -88,6 +97,8 @@ the choice by running a guest binary, stepping down if that fails. Set
 | `VALHEIM_MANIFEST` | | Pin a depot manifest instead of taking whatever Steam serves. |
 | `VALHEIM_SKIP_UPDATE` | `false` | Start without contacting Steam. |
 | `VALHEIM_VALIDATE` | `false` | Checksum every file on update. |
+| `VALHEIM_DOWNLOAD_ATTEMPTS` | `6` | Tries before giving up on Steam. |
+| `VALHEIM_DOWNLOAD_DELAY` | `10` | Seconds before the first retry; doubles to a 120s ceiling. |
 
 ### Crossplay is a backend, not an addition
 

@@ -55,20 +55,62 @@ fi
 
 mkdir -p "${server_dir}" "${save_dir}" "${steam_dir}" "${HOME}"
 
+# Steam is reachable or it is not, and the difference is usually seconds. The
+# delay doubles to a ceiling so a brief outage costs a few seconds while a long
+# one still gives up in bounded time rather than hanging the start forever.
+retry() {
+  local attempts=${VALHEIM_DOWNLOAD_ATTEMPTS:-6}
+  local delay=${VALHEIM_DOWNLOAD_DELAY:-10}
+  local n=1
+  while true; do
+    if "$@"; then
+      return 0
+    fi
+    if ((n >= attempts)); then
+      return 1
+    fi
+    echo "==> attempt ${n} of ${attempts} failed, retrying in ${delay}s"
+    sleep "${delay}"
+    n=$((n + 1))
+    delay=$((delay * 2))
+    ((delay > 120)) && delay=120
+  done
+}
+
 if [[ ${VALHEIM_SKIP_UPDATE:-false} != "true" ]]; then
   echo "==> updating Valheim server files in ${server_dir}"
   download=(DepotDownloader -app "${STEAM_APP}" -depot "${STEAM_DEPOT}" -dir "${server_dir}")
-  # Pinning a manifest turns an implicit "whatever Steam serves today" into a
-  # version you can roll back to.
+  # An escape hatch for rolling back a bad build, not a default. Pinning makes
+  # the server drift behind clients that update themselves, and a world saved
+  # by a newer build may not load on an older one.
   [[ -n ${VALHEIM_MANIFEST:-} ]] && download+=(-manifest "${VALHEIM_MANIFEST}")
   [[ ${VALHEIM_VALIDATE:-false} == "true" ]] && download+=(-validate)
-  "${download[@]}"
+
+  # An update check must not be able to take down a server that was running.
+  # Restarts here are unattended, so giving up on a Steam outage would turn a
+  # stale server into no server. Start what is installed and say so loudly.
+  if ! retry "${download[@]}"; then
+    if [[ -f "${server_dir}/valheim_server.x86_64" ]]; then
+      echo "==> WARNING: Steam unreachable, starting the installed build instead."
+      echo "==> WARNING: it may be older than clients expect, and they will not be able to join."
+    else
+      echo "error: Steam is unreachable and ${server_dir} has no game files to fall back on" >&2
+      exit 1
+    fi
+  fi
 
   # Only the 64-bit build is wanted; the depot's top-level copies are 32-bit.
   echo "==> updating Steamworks redistributables in ${steam_dir}"
   printf 'regex:^linux64/\n' >"${steam_dir}/filelist.txt"
-  DepotDownloader -app "${STEAM_REDIST_APP}" -depot "${STEAM_REDIST_DEPOT}" \
-    -dir "${steam_dir}" -filelist "${steam_dir}/filelist.txt"
+  if ! retry DepotDownloader -app "${STEAM_REDIST_APP}" -depot "${STEAM_REDIST_DEPOT}" \
+    -dir "${steam_dir}" -filelist "${steam_dir}/filelist.txt"; then
+    if [[ -f "${steam_dir}/linux64/steamclient.so" ]]; then
+      echo "==> WARNING: Steam unreachable, keeping the installed Steamworks redistributable"
+    else
+      echo "error: Steam is unreachable and ${steam_dir} has no steamclient.so to fall back on" >&2
+      exit 1
+    fi
+  fi
 fi
 
 if [[ ! -f "${server_dir}/valheim_server.x86_64" ]]; then
