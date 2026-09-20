@@ -29,6 +29,26 @@ Steamworks SDK Redist (app 1007, depot 1006) instead and places it, with
 `libsteamwebrtc.so`, in `~/.steam/sdk64`. This happens even with crossplay: the
 server initialises Steam either way, and a failure there is fatal.
 
+**The guest tree must not shadow what the runtime injects into `/etc`.** FEX
+resolves a guest path inside the RootFS first and falls back to the host only
+when it is absent. The stock image ships `resolv.conf` and `hosts` as empty
+files, so the guest sees no nameservers and every lookup fails with `Cannot
+resolve destination host`, which on the crossplay backend means PlayFab login
+never succeeds. Both are deleted from the tree; `nsswitch.conf` is kept,
+because glibc's resolver needs it and the guest's copy is the valid one. The
+same rule produced the passwd fix below, and it is the first thing to check for
+any new "works natively, fails under FEX" symptom.
+
+**The guest tree carries a passwd entry for the runtime user.** PlayFab Party,
+which the crossplay backend depends on, calls `getpwuid()` and dereferences
+`pw_dir` without a null check. FEX resolves `/etc/passwd` inside the RootFS, so
+a guest tree that does not describe the uid the container runs as returns NULL
+and the server segfaults the moment `libparty.so` is loaded, before any game
+code runs. The fault is a null dereference at `0x20`, the offset of `pw_dir`.
+Native runs never hit it because there the process reads this image's own
+passwd. The uid, gid and home directory are build args so the runtime user and
+the guest entry cannot drift apart; the volume's `fsGroup` has to match them.
+
 **The guest library tree is assembled with `dpkg-deb`, not apt.** An arm64
 builder cannot run amd64 maintainer scripts, and pulling QEMU into every image
 build to work around that costs more than it saves. `build-guest-rootfs.sh`
@@ -92,6 +112,10 @@ about. Kubernetes sends `SIGTERM`, so the entrypoint translates it; allow a
 
 The container runs as uid 10001. Give the volume an `fsGroup` so it can write,
 or the first `mkdir` fails.
+
+`HOME` must exist and be writable. FEX creates its config directory and its
+server socket there, and without it fails with `Couldn't connect to FEXServer
+socket`, which does not mention permissions.
 
 FEX resolves a guest path inside the RootFS first and falls back to the host
 path when it is absent, which is how `/data` reaches the real volume. The

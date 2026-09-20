@@ -86,6 +86,14 @@ mkdir -p "${rootfs}/etc/ssl/certs"
 cat "${rootfs}"/usr/share/ca-certificates/mozilla/*.crt \
   >"${rootfs}/etc/ssl/certs/ca-certificates.crt"
 
+# Anything the container runtime injects into /etc must not be shadowed here.
+# FEX resolves a guest path inside the RootFS first and only falls back to the
+# host when it is absent, and the stock image ships these as empty files, so
+# the guest reads no nameservers at all and every lookup fails with "Cannot
+# resolve destination host". Deleting them is what reaches the real ones.
+# nsswitch.conf stays: glibc's resolver needs it and this copy is the valid one.
+rm -f "${rootfs}/etc/resolv.conf" "${rootfs}/etc/hosts"
+
 rm -rf \
   "${rootfs}/usr/share/doc" \
   "${rootfs}/usr/share/man" \
