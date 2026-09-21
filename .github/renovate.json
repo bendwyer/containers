@@ -77,6 +77,11 @@
       "automerge": true
     },
     {
+      "description": "A digest bump carries no version to gate on, and a ref-tracked dep is neither docker nor npm, so the rules above never reach either.",
+      "matchUpdateTypes": ["digest"],
+      "automerge": true
+    },
+    {
       "description": "A minor here is a release line change, so review it.",
       "matchPackageNames": ["node", "python", "golang", "alpine"],
       "matchUpdateTypes": ["minor"],
