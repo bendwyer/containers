@@ -15,7 +15,7 @@ RUN apk add --no-cache curl tar && \
     | tar xzf - --strip-components=1 -C /src && \
   printf '%s' "${VERSION}" > /src/.version
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:2fa828c68761b1b8c23d7662dc134421b9d3b59fe1425fdbc80804e390cdb24d AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:35d40304542c8689331f8cab17c65926cdf48fe711e289321d71924b230a7d29 AS build
 
 WORKDIR /src
 COPY --from=fetch /src .
