@@ -88,6 +88,15 @@
       "automerge": false
     },
     {
+      "description": "PaperlessMCP targets net10.0, so an SDK past that line builds the same output. The 11.0 tag is a release candidate, and the chiseled runtime moved to a new Ubuntu codename, so the pair cannot advance together. Raise this when upstream retargets. Docker versioning has no range support, hence the regex.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": [
+        "mcr.microsoft.com/dotnet/sdk",
+        "mcr.microsoft.com/dotnet/aspnet"
+      ],
+      "allowedVersions": "/^10\\./"
+    },
+    {
       "description": "typescript-eslint's peer range caps typescript below 6.1, so a 7.x update cannot resolve.",
       "matchDatasources": ["npm"],
       "matchPackageNames": ["typescript"],
