@@ -53,8 +53,11 @@ for variant in "${variants[@]}"; do
   fi
 
   # The PPA version is "2609-1~n": the FEX release, then Launchpad's packaging
-  # revision. Only the release is pinned here.
-  if [[ ${found_version%%-*} != "${version}" ]]; then
+  # revision. Only the release is pinned here. The PPA can also ship a point
+  # build such as "2609.1" that has no upstream release tag, and its index
+  # keeps only the newest, so a point build of the pinned release is accepted.
+  release=${found_version%%-*}
+  if [[ ${release} != "${version}" && ${release} != "${version}".* ]]; then
     echo "error: asked for FEX ${version} but ${series} publishes ${package} ${found_version}" >&2
     exit 1
   fi
