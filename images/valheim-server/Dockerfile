@@ -9,9 +9,9 @@
 # The digest is the multi-arch index; --platform selects amd64 out of it. The
 # constant is the point and the lint rule above is skipped for it: the guest is
 # x86-64 whatever the build platform is, so this must not follow TARGETPLATFORM.
-FROM --platform=linux/amd64 ubuntu:24.04@sha256:a853f94d226358a79c740cfc7bce0c289748f3fe3488d921d038ccd752c61b60 AS guest-base
+FROM --platform=linux/amd64 ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55 AS guest-base
 
-FROM ubuntu:24.04@sha256:a853f94d226358a79c740cfc7bce0c289748f3fe3488d921d038ccd752c61b60 AS guest
+FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55 AS guest
 RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates curl \
   && rm -rf /var/lib/apt/lists/*
@@ -19,7 +19,7 @@ COPY --from=guest-base / /rootfs/
 COPY build-guest-rootfs.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/build-guest-rootfs.sh && build-guest-rootfs.sh /rootfs
 
-FROM ubuntu:24.04@sha256:a853f94d226358a79c740cfc7bce0c289748f3fe3488d921d038ccd752c61b60 AS fex
+FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55 AS fex
 ARG TARGETARCH
 # renovate: datasource=github-releases depName=FEX-Emu/FEX extractVersion=^FEX-(?<version>.+)$
 ARG FEX_VERSION=2609
@@ -31,7 +31,7 @@ RUN chmod +x /usr/local/bin/install-fex.sh \
   && mkdir -p /opt/fex /usr/share/fex-emu \
   && if [ "${TARGETARCH}" = "arm64" ]; then install-fex.sh "${FEX_VERSION}" /opt/fex; fi
 
-FROM ubuntu:24.04@sha256:a853f94d226358a79c740cfc7bce0c289748f3fe3488d921d038ccd752c61b60 AS depotdownloader
+FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55 AS depotdownloader
 ARG TARGETARCH
 # renovate: datasource=github-releases depName=SteamRE/DepotDownloader extractVersion=^DepotDownloader_(?<version>.+)$
 ARG DEPOTDOWNLOADER_VERSION=3.4.0
@@ -52,7 +52,7 @@ RUN case "${TARGETARCH}" in \
   && chmod +x /usr/local/bin/DepotDownloader \
   && /usr/local/bin/DepotDownloader -V
 
-FROM ubuntu:24.04@sha256:a853f94d226358a79c740cfc7bce0c289748f3fe3488d921d038ccd752c61b60
+FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
 ARG TARGETARCH
 
 # One source of truth for the identity. The runtime user, the guest passwd
