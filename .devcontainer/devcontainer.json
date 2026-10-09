@@ -1,6 +1,6 @@
 {
   "name": "containers",
-  "image": "mcr.microsoft.com/devcontainers/base:debian12@sha256:c817051aa895a88c4bf28a14f47140db1fe88037c45604c3fe025d66d246200f",
+  "image": "mcr.microsoft.com/devcontainers/base:debian12@sha256:9a5942e64b35c5497c591b9bf177f4a3002d43440bf0a5e1a14fc34667b1a5c1",
   "customizations": {
     "vscode": {
       "extensions": [
