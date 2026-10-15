@@ -4,7 +4,7 @@ ARG VERSION
 WORKDIR /app
 RUN npm install @ansible/ansible-mcp-server@${VERSION}
 
-FROM gcr.io/distroless/nodejs24-debian13@sha256:96df910f65fdd8a21d00d14d4cc046adcfcf3ced2d5e96be4b39ebde9f4866c6
+FROM gcr.io/distroless/nodejs24-debian13@sha256:9ddd3f7de61d8c62337cdcbeaceb621de5e0c955ccdc70f4c3586db74a8c278f
 COPY --from=build /app /app
 WORKDIR /app
 ENTRYPOINT ["/nodejs/bin/node", "node_modules/@ansible/ansible-mcp-server/dist/cli.js"]
