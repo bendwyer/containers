@@ -1,4 +1,4 @@
-FROM python:3.14-alpine3.24@sha256:01ddf82b43479870a7ea87037b7d68472bef12cc244941843c26bb75bf9a9b04 AS builder
+FROM python:3.14-alpine3.24@sha256:601e99e090cb08c2784a42395487709500bc39930307fe72f3f11a8f3c430762 AS builder
 RUN apk add --no-cache gcc g++ musl-dev pkgconf \
     jpeg-dev zlib-dev libpng-dev libwebp-dev icu-dev
 COPY requirements.txt .
@@ -11,7 +11,7 @@ RUN set -eu; \
     site=$(echo /install/lib/python*/site-packages); \
     PYTHONPATH="$site" python -m unittest discover -p "test_*.py"
 
-FROM python:3.14-alpine3.24@sha256:01ddf82b43479870a7ea87037b7d68472bef12cc244941843c26bb75bf9a9b04
+FROM python:3.14-alpine3.24@sha256:601e99e090cb08c2784a42395487709500bc39930307fe72f3f11a8f3c430762
 RUN apk add --no-cache jpeg zlib libpng libwebp icu-libs
 COPY --from=builder /install /usr/local
 ENV PYTHONUNBUFFERED=1
