@@ -22,7 +22,7 @@ RUN chmod +x /usr/local/bin/build-guest-rootfs.sh && build-guest-rootfs.sh /root
 FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55 AS fex
 ARG TARGETARCH
 # renovate: datasource=github-releases depName=FEX-Emu/FEX extractVersion=^FEX-(?<version>.+)$
-ARG FEX_VERSION=2609
+ARG FEX_VERSION=2610
 RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates curl \
   && rm -rf /var/lib/apt/lists/*
