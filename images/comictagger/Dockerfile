@@ -1,9 +1,9 @@
-FROM python:3.14-alpine3.24@sha256:b15fd707501f872b2d46a8edacb18aca52db393460d17a60a20e7231dbdb3263 AS builder
+FROM python:3.14-alpine3.24@sha256:a18b20ad69e74df6cf6d2e1b1a260d7a1ecf5380fd83b310f83ba88c461cf894 AS builder
 RUN apk add --no-cache icu-dev g++ pkgconf
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-FROM python:3.14-alpine3.24@sha256:b15fd707501f872b2d46a8edacb18aca52db393460d17a60a20e7231dbdb3263
+FROM python:3.14-alpine3.24@sha256:a18b20ad69e74df6cf6d2e1b1a260d7a1ecf5380fd83b310f83ba88c461cf894
 RUN apk add --no-cache icu-libs
 COPY --from=builder /install /usr/local
 # Nothing declares a supported comictagger range for the talker, and nothing
