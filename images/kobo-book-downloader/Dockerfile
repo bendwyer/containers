@@ -1,4 +1,4 @@
-FROM python:3.14-alpine3.24@sha256:b15fd707501f872b2d46a8edacb18aca52db393460d17a60a20e7231dbdb3263 AS builder
+FROM python:3.14-alpine3.24@sha256:a18b20ad69e74df6cf6d2e1b1a260d7a1ecf5380fd83b310f83ba88c461cf894 AS builder
 
 WORKDIR /app
 RUN apk add --no-cache git
@@ -9,7 +9,7 @@ RUN git clone https://github.com/TnS-hun/kobo-book-downloader.git . \
     && git checkout "$KOBO_REF"
 RUN pip install --no-cache-dir --target=/app/deps -r requirements.txt
 
-FROM python:3.14-alpine3.24@sha256:b15fd707501f872b2d46a8edacb18aca52db393460d17a60a20e7231dbdb3263
+FROM python:3.14-alpine3.24@sha256:a18b20ad69e74df6cf6d2e1b1a260d7a1ecf5380fd83b310f83ba88c461cf894
 
 WORKDIR /app
 COPY --from=builder /app /app
