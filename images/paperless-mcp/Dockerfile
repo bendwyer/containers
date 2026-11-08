@@ -3,7 +3,7 @@ ARG REPO=PaperlessMCP
 
 # Upstream ships no release binaries and only a linux/amd64 image, so the
 # tagged source is fetched and built here instead of pulling a binary.
-FROM alpine:3.24@sha256:3f4d6b32e26703c6082839234f43769d5046b3ac7c910033911d1e71d8cd630a AS fetch
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS fetch
 
 ARG OWNER
 ARG REPO
