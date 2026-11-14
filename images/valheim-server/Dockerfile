@@ -23,13 +23,13 @@ FROM ubuntu:24.04@sha256:2198e4c65076e9cb0b3d695219df667c0e3b0072da64ca3c2648aca
 ARG TARGETARCH
 # renovate: datasource=github-releases depName=FEX-Emu/FEX extractVersion=^FEX-(?<version>.+)$
 ARG FEX_VERSION=2611.1
-RUN apt-get update && apt-get install -y --no-install-recommends \
-  ca-certificates curl \
-  && rm -rf /var/lib/apt/lists/*
-COPY install-fex.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/install-fex.sh \
+# The FEX baselines to build and support, space-separated, from armv8.0, armv8.2
+# and armv8.4. Each is a full FEX build.
+ARG FEX_ARCHES=armv8.2
+COPY build-fex.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/build-fex.sh \
   && mkdir -p /opt/fex /usr/share/fex-emu \
-  && if [ "${TARGETARCH}" = "arm64" ]; then install-fex.sh "${FEX_VERSION}" /opt/fex; fi
+  && if [ "${TARGETARCH}" = "arm64" ]; then build-fex.sh "${FEX_VERSION}" /opt/fex ${FEX_ARCHES}; fi
 
 FROM ubuntu:24.04@sha256:2198e4c65076e9cb0b3d695219df667c0e3b0072da64ca3c2648aca17dcecaf5 AS depotdownloader
 ARG TARGETARCH
@@ -102,7 +102,8 @@ RUN test -x /opt/valheim/rootfs/lib64/ld-linux-x86-64.so.2 \
   && test ! -e /opt/valheim/rootfs/etc/hosts \
   && grep -q ":x:${VALHEIM_UID}:${VALHEIM_GID}:" /opt/valheim/rootfs/etc/passwd \
   && if [ "${TARGETARCH}" = "arm64" ]; then \
-  FEX_ROOTFS=/opt/valheim/rootfs /usr/local/bin/select-fex.sh; \
+  test -s /usr/share/fex-emu/GuestThunks/libVDSO-guest.so \
+  && FEX_ROOTFS=/opt/valheim/rootfs /usr/local/bin/select-fex.sh; \
   fi
 
 ENV HOME=/data/home \

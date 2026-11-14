@@ -2,12 +2,17 @@
 # Choose which of the installed FEX builds this host can run, and print its
 # directory.
 #
-# The three builds are compiled against armv8.0-a, armv8.2-a and armv8.4-a
-# baselines, so picking one too high faults with SIGILL somewhere unpredictable
-# rather than refusing to start. Selection is therefore made twice: once from
-# the HWCAP flags the kernel reports, which says what the compiler was allowed
-# to emit, and once by actually running a guest binary, which catches a
-# mismatch the flags did not predict. A host that fails the run steps down.
+# Only the builds named in FEX_ARCHES in the Dockerfile are installed, and a
+# host that none of them fits is unsupported and fails here. The table covers
+# every baseline build-fex.sh accepts, so changing FEX_ARCHES needs no change
+# here.
+#
+# A build compiled for a baseline above the host faults with SIGILL somewhere
+# unpredictable rather than refusing to start. Selection is therefore made
+# twice: once from the HWCAP flags the kernel reports, which says what the
+# compiler was allowed to emit, and once by actually running a guest binary,
+# which catches a mismatch the flags did not predict. A host that fails the run
+# steps down to the next installed build, if there is one.
 #
 # Features listed are the ones mandatory at each baseline that carry a HWCAP
 # bit: v8.1 added LSE and RDM, v8.2 added DC CVAP, v8.4 added LSE2, LRCPC2 and
@@ -69,5 +74,6 @@ for variant in "${candidates[@]}"; do
   echo "warning: FEX ${variant} is advertised by this CPU but failed to run a guest binary" >&2
 done
 
-echo "error: no installed FEX build runs on this host (features:${features})" >&2
+installed=$(find "${fexdir}" -mindepth 1 -maxdepth 1 -type d -printf '%f ' 2>/dev/null || true)
+echo "error: no installed FEX build runs on this host; this image supports ${installed:-nothing} (features:${features})" >&2
 exit 1
