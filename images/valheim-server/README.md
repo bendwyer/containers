@@ -68,7 +68,9 @@ works identically on both build architectures.
 **The Ubuntu release is the `FROM` lines and nothing else.** The guest tree
 takes its release from the `guest-base` image and resolves package names
 there, and the FEX build pulls the cross toolchain of that release's default
-GCC. A release bump therefore needs no edit to the scripts.
+GCC. A release bump therefore needs no edit to the scripts. The runtime and
+`guest-base` lines must name the same release, and the build gate fails if
+they do not.
 
 **Ubuntu, where the rest of this repository uses Alpine.** FEX is compiled
 against glibc and libstdc++, and DepotDownloader ships a glibc .NET runtime;

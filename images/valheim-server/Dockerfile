@@ -88,7 +88,13 @@ RUN chmod +x /usr/local/bin/select-fex.sh /usr/local/bin/entrypoint.sh
 # The build gate. container-build-push.yml runs no test job, so the check has
 # to fail the image: on arm64 this picks a FEX build and proves it can load and
 # run an x86-64 binary out of the guest tree, which is the whole premise here.
-RUN test -x /opt/valheim/rootfs/lib64/ld-linux-x86-64.so.2 \
+# The release check guards the amd64 path, where the host loader resolves the
+# guest's libraries and so must come from the same release.
+RUN host=$(. /etc/os-release && echo "${VERSION_ID}") \
+  && guest=$(. /opt/valheim/rootfs/etc/os-release && echo "${VERSION_ID}") \
+  && { [ "${host}" = "${guest}" ] \
+  || { echo "error: runtime is Ubuntu ${host} but guest-base is ${guest}" >&2; exit 1; }; } \
+  && test -x /opt/valheim/rootfs/lib64/ld-linux-x86-64.so.2 \
   && test -e /opt/valheim/rootfs/usr/lib/x86_64-linux-gnu/libatomic.so.1 \
   && test -e /opt/valheim/rootfs/usr/lib/x86_64-linux-gnu/libpulse.so.0 \
   && test -e /opt/valheim/rootfs/usr/lib/x86_64-linux-gnu/libpulse-mainloop-glib.so.0 \
