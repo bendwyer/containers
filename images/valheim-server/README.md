@@ -58,11 +58,17 @@ Native runs never hit it because there the process reads this image's own
 passwd. The uid, gid and home directory are build args so the runtime user and
 the guest entry cannot drift apart; the volume's `fsGroup` has to match them.
 
-**The guest library tree is assembled with `dpkg-deb`, not apt.** An arm64
+**The guest library tree is unpacked with `dpkg-deb`, not installed.** An arm64
 builder cannot run amd64 maintainer scripts, and pulling QEMU into every image
 build to work around that costs more than it saves. `build-guest-rootfs.sh`
-resolves packages out of the Ubuntu indices and unpacks them, which needs no
-emulation and works identically on both build architectures.
+has apt resolve and download the closure of a few named roots against the
+guest's own package database, then unpacks it, which needs no emulation and
+works identically on both build architectures.
+
+**The Ubuntu release is the `FROM` lines and nothing else.** The guest tree
+takes its release from the `guest-base` image and resolves package names
+there, and the FEX build pulls the cross toolchain of that release's default
+GCC. A release bump therefore needs no edit to the scripts.
 
 **Ubuntu, where the rest of this repository uses Alpine.** FEX is compiled
 against glibc and libstdc++, and DepotDownloader ships a glibc .NET runtime;

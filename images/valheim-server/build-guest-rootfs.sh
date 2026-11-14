@@ -9,69 +9,52 @@
 # because dpkg would have to execute amd64 maintainer scripts, so dpkg-deb -x
 # is used on both. That is pure extraction and needs no emulation.
 #
-# Iron Gate's manual names libatomic1 and libpulse0 as the requirements beyond
-# a base install; the rest is their runtime closure, resolved once with apt and
-# pinned here as a literal so the tree cannot quietly grow a dependency.
+# Only the roots are named. apt resolves their closure against the guest's own
+# dpkg database, so the tree gets exactly what the base image lacks, and the
+# release is whatever the guest base image is: package names that change
+# between releases (t64, libflac soname bumps) never have to be edited here.
 set -euo pipefail
 
 rootfs=${1:?usage: build-guest-rootfs.sh ROOTFS}
 mirror=${UBUNTU_MIRROR:-http://archive.ubuntu.com/ubuntu}
-suite=${UBUNTU_SUITE:-noble}
+# shellcheck source=/dev/null
+suite=$(. "${rootfs}/etc/os-release" && echo "${VERSION_CODENAME:?}")
 
-# libpulse-mainloop-glib0 is not in Iron Gate's list but libparty.so, the
-# PlayFab Party transport the crossplay backend runs on, links it directly and
-# silently fails to load without it.
-packages=(
-  ca-certificates libapparmor1 libasyncns0 libatomic1 libbsd0 libdbus-1-3
-  libflac12t64 libglib2.0-0t64 libmp3lame0 libmpg123-0t64 libogg0 libopus0
-  libpulse-mainloop-glib0 libpulse0 libsndfile1 libvorbis0a libvorbisenc2
-  libx11-6 libx11-data libx11-xcb1 libxau6 libxcb1 libxdmcp6 openssl
-)
+# Iron Gate's manual names libatomic1 and libpulse0. libpulse-mainloop-glib0 is
+# not in its list, but libparty.so, the PlayFab Party transport the crossplay
+# backend runs on, links it directly and silently fails to load without it.
+packages=(ca-certificates libatomic1 libpulse0 libpulse-mainloop-glib0)
 
 work=$(mktemp -d)
 trap 'rm -rf "${work}"' EXIT
+mkdir -p "${work}/lists/partial" "${work}/cache/archives/partial" "${work}/sources.list.d"
 
-# -updates and -security carry newer builds than the release pocket, so all
-# three are read and the highest version of each package wins.
+# -updates and -security carry newer builds than the release pocket.
 for pocket in "${suite}" "${suite}-updates" "${suite}-security"; do
-  for component in main universe; do
-    curl -fsSL --retry 3 \
-      "${mirror}/dists/${pocket}/${component}/binary-amd64/Packages.gz" |
-      gunzip >>"${work}/index"
-  done
-done
+  echo "deb [arch=amd64 signed-by=${rootfs}/usr/share/keyrings/ubuntu-archive-keyring.gpg] ${mirror} ${pocket} main universe"
+done >"${work}/sources.list"
 
-awk -v RS= -v OFS='\t' '
-  {
-    name = ""; version = ""; sha = ""; file = ""
-    fields = split($0, line, "\n")
-    for (i = 1; i <= fields; i++) {
-      if (line[i] ~ /^Package: /)  name    = substr(line[i], 10)
-      if (line[i] ~ /^Version: /)  version = substr(line[i], 10)
-      if (line[i] ~ /^SHA256: /)   sha     = substr(line[i], 9)
-      if (line[i] ~ /^Filename: /) file    = substr(line[i], 11)
-    }
-    if (name != "" && file != "") print name, version, sha, file
-  }' "${work}/index" >"${work}/candidates"
+# A private apt state pointed at the guest, so the builder's own architecture,
+# sources and package database play no part.
+apt_opts=(
+  -o "APT::Architecture=amd64"
+  -o "APT::Architectures=amd64"
+  -o "Dir::Etc::SourceList=${work}/sources.list"
+  -o "Dir::Etc::SourceParts=${work}/sources.list.d"
+  -o "Dir::State::Lists=${work}/lists"
+  -o "Dir::State::extended_states=${work}/extended_states"
+  -o "Dir::State::status=${rootfs}/var/lib/dpkg/status"
+  -o "Dir::Cache=${work}/cache"
+  -o "APT::Sandbox::User=root"
+  -o "Debug::NoLocking=true"
+)
+apt-get "${apt_opts[@]}" update
+apt-get "${apt_opts[@]}" install -y --download-only --no-install-recommends "${packages[@]}"
 
-for package in "${packages[@]}"; do
-  best_version="" best_sha="" best_file=""
-  while IFS=$'\t' read -r _ version sha file; do
-    if [[ -z ${best_version} ]] || dpkg --compare-versions "${version}" gt "${best_version}"; then
-      best_version=${version} best_sha=${sha} best_file=${file}
-    fi
-  done < <(awk -F'\t' -v p="${package}" '$1 == p' "${work}/candidates")
-
-  if [[ -z ${best_file} ]]; then
-    echo "error: ${package} not found in the ${suite} amd64 indices" >&2
-    exit 1
-  fi
-
-  deb="${work}/${package}.deb"
-  curl -fsSL --retry 3 -o "${deb}" "${mirror}/${best_file}"
-  echo "${best_sha}  ${deb}" | sha256sum -c - >/dev/null
+for deb in "${work}"/cache/archives/*.deb; do
   dpkg-deb -x "${deb}" "${rootfs}"
-  echo "unpacked ${package} ${best_version}"
+  # shellcheck disable=SC2016 # dpkg's format syntax, not the shell's
+  echo "unpacked $(dpkg-deb -W --showformat '${Package} ${Version}' "${deb}")"
 done
 
 # The unversioned .so symlinks live in libpulse-dev, which Iron Gate also
