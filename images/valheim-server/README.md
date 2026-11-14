@@ -73,7 +73,15 @@ loader resolves those same libraries.
 **FEX is built from its release tag.** Upstream publishes source only, and the
 PPA that does ship binaries keeps just its newest build, so a version pinned
 there disappears at the next release. The tag cannot, and the build adds about
-three minutes to the arm64 image.
+four minutes to the arm64 image.
+
+**The VDSO thunk is the one thunk shipped.** FEX maps
+`GuestThunks/libVDSO-guest.so` into every guest whenever the file exists, and
+it is what lets the game's `clock_gettime` and `gettimeofday` skip the syscall.
+Without it the server still runs, with every time call emulated as a syscall,
+so its absence would never show up as a failure; the build gate checks for it.
+The other thunks forward GL, Vulkan and CUDA calls a headless server never
+makes and are dropped.
 
 **Only the baselines in `FEX_ARCHES` are supported.** The Dockerfile build arg
 lists the `-march` baselines FEX is built for, from `armv8.0`, `armv8.2` and
