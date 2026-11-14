@@ -41,14 +41,15 @@ done
 
 # The second group is the thunk build: the generator needs libclang, LLVM's
 # CMake packages and OpenSSL, the guest side cross-compiles for x86-64 and
-# i686, and the host side needs the headers of every library it forwards.
+# i686, and the host side needs the headers of every library it forwards. The
+# cross metapackages pull the libc, libgcc and libstdc++ of the release's
+# default GCC, so no GCC version is named here.
 apt-get update
 apt-get install -y --no-install-recommends \
   ca-certificates clang clang-tools cmake git lld llvm ninja-build pkgconf \
   python3 \
   libclang-dev llvm-dev libssl-dev \
-  g++-x86-64-linux-gnu libc6-dev-i386-cross libgcc-13-dev-i386-cross \
-  libstdc++-13-dev-i386-cross \
+  g++-x86-64-linux-gnu g++-i686-linux-gnu \
   libasound2-dev libdrm-dev libegl-dev libgl-dev libwayland-dev libx11-dev \
   libxcb-dri2-0-dev libxcb-dri3-dev libxcb-glx0-dev libxcb-present-dev \
   libxcb-shm0-dev libxrandr-dev libxrender-dev libxshmfence-dev

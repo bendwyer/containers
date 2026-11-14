@@ -12,9 +12,6 @@
 FROM --platform=linux/amd64 ubuntu:24.04@sha256:2198e4c65076e9cb0b3d695219df667c0e3b0072da64ca3c2648aca17dcecaf5 AS guest-base
 
 FROM ubuntu:24.04@sha256:2198e4c65076e9cb0b3d695219df667c0e3b0072da64ca3c2648aca17dcecaf5 AS guest
-RUN apt-get update && apt-get install -y --no-install-recommends \
-  ca-certificates curl \
-  && rm -rf /var/lib/apt/lists/*
 COPY --from=guest-base / /rootfs/
 COPY build-guest-rootfs.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/build-guest-rootfs.sh && build-guest-rootfs.sh /rootfs
@@ -95,7 +92,7 @@ RUN test -x /opt/valheim/rootfs/lib64/ld-linux-x86-64.so.2 \
   && test -e /opt/valheim/rootfs/usr/lib/x86_64-linux-gnu/libatomic.so.1 \
   && test -e /opt/valheim/rootfs/usr/lib/x86_64-linux-gnu/libpulse.so.0 \
   && test -e /opt/valheim/rootfs/usr/lib/x86_64-linux-gnu/libpulse-mainloop-glib.so.0 \
-  && test -e /opt/valheim/rootfs/usr/lib/x86_64-linux-gnu/pulseaudio/libpulsecommon-16.1.so \
+  && ls /opt/valheim/rootfs/usr/lib/x86_64-linux-gnu/pulseaudio/libpulsecommon-*.so \
   && test -s /opt/valheim/rootfs/etc/ssl/certs/ca-certificates.crt \
   && test -e /opt/valheim/rootfs/etc/nsswitch.conf \
   && test ! -e /opt/valheim/rootfs/etc/resolv.conf \
