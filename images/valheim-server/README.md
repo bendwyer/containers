@@ -64,18 +64,31 @@ build to work around that costs more than it saves. `build-guest-rootfs.sh`
 resolves packages out of the Ubuntu indices and unpacks them, which needs no
 emulation and works identically on both build architectures.
 
-**Ubuntu, where the rest of this repository uses Alpine.** The FEX packages are
-built against Ubuntu noble and need `libc6 >= 2.38` and `libstdc++6 >= 13`, and
-DepotDownloader ships a glibc .NET runtime; neither has a musl build. Matching
-the runtime base to the series the guest tree is assembled from also keeps the
-amd64 path valid, since there the host loader resolves those same libraries.
+**Ubuntu, where the rest of this repository uses Alpine.** FEX is compiled
+against glibc and libstdc++, and DepotDownloader ships a glibc .NET runtime;
+neither has a musl build. Matching the runtime base to the series the guest
+tree is assembled from also keeps the amd64 path valid, since there the host
+loader resolves those same libraries.
 
-**All three FEX CPU builds are installed.** They differ in the `-march`
-baseline FEX's own code is compiled against (`armv8.0-a`, `armv8.2-a`,
-`armv8.4-a`), so the wrong one is a `SIGILL` rather than a clean refusal.
-`select-fex.sh` picks one at startup from the kernel's HWCAP flags and confirms
-the choice by running a guest binary, stepping down if that fails. Set
-`FEX_VARIANT` to override.
+**FEX is built from its release tag.** Upstream publishes source only, and the
+PPA that does ship binaries keeps just its newest build, so a version pinned
+there disappears at the next release. The tag cannot, and the build adds about
+three minutes to the arm64 image.
+
+**Only the baselines in `FEX_ARCHES` are supported.** The Dockerfile build arg
+lists the `-march` baselines FEX is built for, from `armv8.0`, `armv8.2` and
+`armv8.4`, and defaults to `armv8.2` alone. A host below every listed baseline
+is not supported: `select-fex.sh` checks the kernel's HWCAP flags and runs a
+guest binary at startup, and stops with an error naming the installed builds
+rather than letting FEX die later on a `SIGILL`. Hosts above a baseline run its
+build. The baseline covers only FEX's own code; the JIT detects host features
+at runtime, so translated game code is unaffected.
+
+Adding a baseline to `FEX_ARCHES` is the whole change. `build-fex.sh` builds
+each into its own directory, and `select-fex.sh` already holds the HWCAP
+requirements of all three, picks the highest the host can run, and steps down
+if it fails. Each baseline is a full build of about three minutes on the arm64
+runner. `FEX_VARIANT` forces a choice at runtime.
 
 ## Configuration
 
