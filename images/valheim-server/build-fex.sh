@@ -20,7 +20,8 @@ arch=armv8.2
 
 apt-get update
 apt-get install -y --no-install-recommends \
-  ca-certificates clang cmake git lld llvm ninja-build pkgconf python3
+  ca-certificates clang clang-tools cmake git lld llvm ninja-build pkgconf \
+  python3
 
 src=$(mktemp -d)
 stage=$(mktemp -d)
