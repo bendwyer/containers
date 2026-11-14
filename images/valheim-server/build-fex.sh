@@ -10,9 +10,12 @@
 # host code. The JIT detects host features at runtime, so translated guest
 # code is the same whatever it is set to.
 #
-# Thunks and FEXConfig are off. Thunks forward GL, Vulkan and CUDA calls to
-# host libraries, which a headless server never makes, and they are what need
-# the x86 cross toolchains. FEXConfig is a Qt GUI.
+# Thunks are built but only the VDSO thunk is shipped. FEX maps it into every
+# guest whenever the file exists, thunks enabled or not, and it is what gives
+# the guest's clock_gettime and gettimeofday a path that skips the syscall.
+# The rest forward GL, Vulkan and CUDA calls a headless server never makes. It
+# is x86 code, so it is built with the first baseline only. FEXConfig, a Qt
+# GUI, is off.
 set -euo pipefail
 
 usage="usage: build-fex.sh FEX_VERSION DESTDIR ARCH..."
@@ -36,10 +39,19 @@ for arch in "$@"; do
   esac
 done
 
+# The second group is the thunk build: the generator needs libclang, LLVM's
+# CMake packages and OpenSSL, the guest side cross-compiles for x86-64 and
+# i686, and the host side needs the headers of every library it forwards.
 apt-get update
 apt-get install -y --no-install-recommends \
   ca-certificates clang clang-tools cmake git lld llvm ninja-build pkgconf \
-  python3
+  python3 \
+  libclang-dev llvm-dev libssl-dev \
+  g++-x86-64-linux-gnu libc6-dev-i386-cross libgcc-13-dev-i386-cross \
+  libstdc++-13-dev-i386-cross \
+  libasound2-dev libdrm-dev libegl-dev libgl-dev libwayland-dev libx11-dev \
+  libxcb-dri2-0-dev libxcb-dri3-dev libxcb-glx0-dev libxcb-present-dev \
+  libxcb-shm0-dev libxrandr-dev libxrender-dev libxshmfence-dev
 
 src=$(mktemp -d)
 
@@ -53,6 +65,7 @@ mapfile -t submodules < <(
 )
 git -C "${src}" submodule update --init --depth 1 --quiet -- "${submodules[@]}"
 
+thunks=True
 for arch in "$@"; do
   build="${src}/build-${arch}"
   stage=$(mktemp -d)
@@ -64,7 +77,7 @@ for arch in "$@"; do
     -DENABLE_LTO=True \
     -DBUILD_TESTING=False \
     -DENABLE_ASSERTIONS=False \
-    -DBUILD_THUNKS=False \
+    -DBUILD_THUNKS="${thunks}" \
     -DBUILD_FEXCONFIG=False \
     -DENABLE_CCACHE=False \
     -DTUNE_CPU=generic \
@@ -81,7 +94,14 @@ for arch in "$@"; do
   mkdir -p "${destdir}/${arch}"
   cp -a "${stage}/usr/bin" "${destdir}/${arch}/bin"
   # AppConfig and ThunksDB are plain data, identical across baselines.
-  cp -a "${stage}/usr/share/fex-emu/." /usr/share/fex-emu/
+  cp -a "${stage}/usr/share/fex-emu/AppConfig" "${stage}/usr/share/fex-emu/ThunksDB.json" \
+    /usr/share/fex-emu/
+  if [[ ${thunks} == True ]]; then
+    mkdir -p /usr/share/fex-emu/GuestThunks
+    cp -a "${stage}/usr/share/fex-emu/GuestThunks/libVDSO-guest.so" \
+      /usr/share/fex-emu/GuestThunks/
+  fi
+  thunks=False
 
   find "${stage}" -type f | sed "s|^${stage}||" | sort
 done

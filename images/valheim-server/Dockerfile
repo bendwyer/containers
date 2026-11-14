@@ -102,7 +102,8 @@ RUN test -x /opt/valheim/rootfs/lib64/ld-linux-x86-64.so.2 \
   && test ! -e /opt/valheim/rootfs/etc/hosts \
   && grep -q ":x:${VALHEIM_UID}:${VALHEIM_GID}:" /opt/valheim/rootfs/etc/passwd \
   && if [ "${TARGETARCH}" = "arm64" ]; then \
-  FEX_ROOTFS=/opt/valheim/rootfs /usr/local/bin/select-fex.sh; \
+  test -s /usr/share/fex-emu/GuestThunks/libVDSO-guest.so \
+  && FEX_ROOTFS=/opt/valheim/rootfs /usr/local/bin/select-fex.sh; \
   fi
 
 ENV HOME=/data/home \
