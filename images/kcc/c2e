@@ -1,0 +1,6 @@
+#!/bin/sh
+# The AppImage's own launcher starts the GUI; call the CLI on its bundled Python.
+exec /opt/kcc/bin/python3 -c 'import sys
+from kindlecomicconverter.startup import startC2E
+sys.argv[0] = "c2e"
+startC2E()' "$@"
