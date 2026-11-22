@@ -11,7 +11,7 @@ RUN curl -fsSL --retry 3 -o /tmp/ansible.vsix \
 
 # The Node line is part of the image name, so Renovate refreshes the digest but
 # never moves the line; follow the current Node LTS line by hand.
-FROM gcr.io/distroless/nodejs26-debian13@sha256:80631bd2f0e7ef192138a7409013b47d92fd11b8ff3bb35f5c0a65be3ecaea4c
+FROM gcr.io/distroless/nodejs26-debian13@sha256:b462e87a3db156aea160dd8a5306b85d02c3061ca0e3194fe0af81282a830ab0
 COPY --from=fetch /app /app
 COPY check-initialize.js /tmp/check-initialize.js
 WORKDIR /app
